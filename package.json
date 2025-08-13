@@ -1,0 +1,40 @@
+{
+  "name": "js-kafka",
+  "version": "1.0.0",
+  "description": "A robust npm package for handling dynamic topic creation, subscription, and management in multi-instance microservice architectures. Built on top of KafkaJS, this package provides a simplified interface for Kafka operations while maintaining full flexibility and control.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "kafka",
+    "broker",
+    "producer",
+    "consumer",
+    "dynamic consumer",
+    "dynamic topic",
+    "dynamic producer"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TCG-LS/js-kafka.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TCG-LS/js-kafka/issues"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "author": "Aarush Mahajan <aarushmahajan15@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "uuid": "^11.1.0"
+  }
+}

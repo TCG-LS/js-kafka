@@ -1,0 +1,7 @@
+test/
+examples/
+coverage/
+.git/
+node_modules/
+*.log
+.env*
