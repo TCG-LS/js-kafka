@@ -1,10 +1,11 @@
 import { IHeaders, KafkaMessage } from 'kafkajs';
 
 export interface KafkaConfig {
-    env?: string;
+    env: string;
     brokers: string[];
     clientId: string;
     serviceName: string;
+    consumerGroupId: string;
     partitions?: number;
     replicationFactor?: number;
     acks?: number;
@@ -37,6 +38,8 @@ interface ISingleKafkaConsumerParams {
 interface IBulkKafkaConsumerParam {
     topic: string;
     messages: KafkaMessage[];
+    partition?: number;
+    offset?: string;
 }
 
 export interface ITopicRegistryOptions {
@@ -66,7 +69,7 @@ export interface SingleTopicMapHandler {
 
 export interface KafkaRegisteryConsumerParams {
     topic: string;
-    message: Record<string, any>;
+    message: any;
     partition?: number;
     offset?: string;
 }
@@ -89,4 +92,8 @@ export interface IKafkaConsumerOptions {
 
 export interface IKafkaProducerOptions {
     acks?: number;
+}
+
+export interface IGetKafkaClientOptions {
+    isSingletonEnabled: boolean;
 }

@@ -1,6 +1,7 @@
 import {
     BatchMessageHandler,
     ITopicRegistryOptions,
+    KafkaConfig,
     SingleMessageHandler,
 } from "../interface/kafka.interface";
 import { Logger } from "../logger/logger";
@@ -10,9 +11,15 @@ import { KafkaConsumerManager } from "./consumer-manager";
 export class KafkaTopicHandlerRegistry {
     private logger: Logger;
     private kafkaConsumer: KafkaConsumerManager;
-    constructor(private readonly kafkaConnection: KafkaConnectionManager) {
+    constructor(
+        private readonly kafkaConnection: KafkaConnectionManager,
+        config: KafkaConfig
+    ) {
         this.logger = Logger.getInstance();
-        this.kafkaConsumer = KafkaConsumerManager.getInstance(this.kafkaConnection);
+        this.kafkaConsumer = KafkaConsumerManager.getInstance(
+            this.kafkaConnection,
+            config
+        );
     }
 
     registerSingle(

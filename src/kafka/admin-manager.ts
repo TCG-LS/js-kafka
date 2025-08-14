@@ -1,4 +1,5 @@
 import { DefaultTopics } from "../enums/kafka.enums";
+import { KafkaConfig } from "../interface/kafka.interface";
 import { Logger } from "../logger/logger";
 import { KafkaConnectionManager } from "./connection-manager";
 import { KafkaProducerManager } from "./producer-manager";
@@ -6,18 +7,24 @@ import { KafkaProducerManager } from "./producer-manager";
 export class KafkaAdminManager {
     private topicMap: Set<string> = new Set();
     private logger: Logger;
+    private _config: KafkaConfig;
     private producer!: KafkaProducerManager;
     private static _instance: KafkaAdminManager;
 
-    constructor(private readonly kafkaConnection: KafkaConnectionManager) {
+    constructor(
+        private readonly kafkaConnection: KafkaConnectionManager,
+        config: KafkaConfig
+    ) {
         this.logger = Logger.getInstance();
+        this._config = config;
     }
 
     public static getInstance(
-        connection: KafkaConnectionManager
+        connection: KafkaConnectionManager,
+        config: KafkaConfig
     ): KafkaAdminManager {
         if (!KafkaAdminManager._instance) {
-            KafkaAdminManager._instance = new KafkaAdminManager(connection);
+            KafkaAdminManager._instance = new KafkaAdminManager(connection, config);
         }
         return KafkaAdminManager._instance;
     }
@@ -28,8 +35,8 @@ export class KafkaAdminManager {
 
     public async createTopic(
         topicName: string,
-        numPartitions = +process.env.KAFKA_PARTATIONS! || 1,
-        replicationFactor = +process.env.KAFKA_REPLICATION_FACTOR! || 1
+        numPartitions = this._config.partitions || 1,
+        replicationFactor = this._config.replicationFactor || 1
     ) {
         if (this.topicMap.has(topicName)) {
             return;
