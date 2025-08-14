@@ -1,4 +1,4 @@
-# kafka-js
+# js-kafka
 
 A robust npm package for handling dynamic topic creation, subscription, and management in multi-instance microservice architectures. Built on top of KafkaJS, this package provides a simplified interface for Kafka operations while maintaining full flexibility and control.
 
@@ -15,25 +15,25 @@ A robust npm package for handling dynamic topic creation, subscription, and mana
 ## Installation
 
 ```bash
-npm install kafka-js
+npm install js-kafka
 ```
 
 ## Important Setup Requirements
 
 ### 1. Create `Topic Updates` Topic (One-Time Setup)
 
-**⚠️ IMPORTANT:** Before using kafka-js in your environment, you must create a special topic named `topic-updates` once. This topic facilitates dynamic topic subscription for all consumers.
+**⚠️ IMPORTANT:** Before using js-kafka in your environment, you must create a special topic named `topic-updates` once. This topic facilitates dynamic topic subscription for all consumers.
 
 ```bash
 # Create the topic-updates topic (one-time setup per environment)
 kafka-topics.sh --create --topic topic-updates --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
 ```
 
-This topic is used internally by kafka-js to manage dynamic topic registration and subscription across all microservice instances.
+This topic is used internally by js-kafka to manage dynamic topic registration and subscription across all microservice instances.
 
 ### 2. Topic Naming Convention
 
-kafka-js uses a specific topic naming convention for dynamic subscription:
+js-kafka uses a specific topic naming convention for dynamic subscription:
 
 **Pattern:** `{env}-{serviceName}-{entityName}.{topicName}`
 
@@ -64,7 +64,7 @@ await kafka.producer.sendMessage("user.events.topic", message);
 ```javascript
 // Use the naming convention or simple names without dots
 await kafka.producer.sendMessage("user-events", message);
-// or let kafka-js handle the naming convention internally
+// or let js-kafka handle the naming convention internally
 ```
 
 The dot (`.`) is reserved for the dynamic topic subscription pattern and should only appear before the final topic name segment.
@@ -74,7 +74,7 @@ The dot (`.`) is reserved for the dynamic topic subscription pattern and should 
 ### 1. Create Kafka Client
 
 ```javascript
-import { getKafkaClient } from "kafka-js";
+import { getKafkaClient } from "js-kafka";
 
 const kafka = getKafkaClient({
   env: "dev",
@@ -160,7 +160,7 @@ By default, the producer is configured to acks the messages with the following l
 
 ### How It Works
 
-When you register a consumer with a topic name like `'user-events'`, kafka-js automatically:
+When you register a consumer with a topic name like `'user-events'`, js-kafka automatically:
 
 1. Subscribes to all existing topics that match the pattern `*.user-events`
 2. Monitors the `topic-updates` topic for new topic registrations
@@ -310,7 +310,7 @@ async function handleSingleMessage(params: {
 ## Complete Example
 
 ```javascript
-import { getkafkaClient } from "kafka-js";
+import { getkafkaClient } from "js-kafka";
 
 class KafkaService {
   constructor() {
@@ -423,7 +423,7 @@ await kafkaService.sendNotification("user-123", {
 
 1. **One-Time Setup**: Ensure the `topic-updates` topic is created before deploying any services
 2. **Register Consumers First**: Always register all consumers before calling `init()`
-3. **Avoid Dots in Topic Names**: Don't use dots (`.`) in your base topic names - let kafka-js handle the naming convention
+3. **Avoid Dots in Topic Names**: Don't use dots (`.`) in your base topic names - let js-kafka handle the naming convention
 4. **Use Meaningful Topic Names**: Choose descriptive topic names that reflect the data flow
 5. **Consumer Groups**: Use appropriate consumer group names to ensure proper load balancing
 6. **Entity IDs**: Use meaningful entity IDs as they become part of the topic name
