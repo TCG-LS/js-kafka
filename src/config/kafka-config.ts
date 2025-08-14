@@ -1,34 +1,36 @@
 import { KafkaConfig } from "../interface/kafka.interface";
 
 export class KafkaConfigManager {
-    private static validateRequiredEnvs(): void {
+    private static validateRequiredEnvs(config: KafkaConfig): void {
         const required = [
-            "KAFKA_BROKERS",
-            "KAFKA_CLIENT_ID",
-            "KAFKA_SERVICE_NAME",
+            "env",
+            "brokers",
+            "clientId",
+            "serviceName",
+            "consumerGroupId",
         ];
 
-        const missing = required.filter((key) => !process.env[key]);
+        const missing = required.filter((key) => !config[key as keyof KafkaConfig]);
         if (missing.length > 0) {
             throw new Error(
-                `Missing required environment variables: ${missing.join(", ")}`
+                `Missing required configuration properties: ${missing.join(", ")}`
             );
         }
     }
 
-    static loadConfig(overrides: Partial<KafkaConfig> = {}): KafkaConfig {
-        this.validateRequiredEnvs();
+    static loadConfig(config: KafkaConfig): KafkaConfig {
+        this.validateRequiredEnvs(config);
 
         return {
-            env: process.env.ENV || "dev",
-            brokers: process.env.KAFKA_BROKERS!.split(","),
-            clientId: process.env.KAFKA_CLIENT_ID!,
-            serviceName: process.env.KAFKA_SERVICE_NAME!,
-            partitions: parseInt(process.env.KAFKA_PARTATIONS || "3"),
-            replicationFactor: parseInt(process.env.KAFKA_REPLICATION_FACTOR || "1"),
-            acks: parseInt(process.env.KAFKA_MESSAGES_ACK || "1"),
-            connectionTimeout: 3000,
-            ...overrides,
+            env: config.env || "dev",
+            brokers: config.brokers,
+            clientId: config.clientId,
+            serviceName: config.serviceName,
+            consumerGroupId: config.consumerGroupId,
+            partitions: config.partitions || 1,
+            replicationFactor: config.replicationFactor || 1,
+            acks: config.acks || 1,
+            connectionTimeout: config.connectionTimeout || 3000,
         };
     }
 }

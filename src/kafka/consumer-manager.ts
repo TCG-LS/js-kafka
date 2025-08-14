@@ -1,10 +1,11 @@
-import { DefaultTopics } from "../enums/kafka.enums";
+import { DefaultTopics, TopicHandlerTypes } from "../enums/kafka.enums";
 import { v4 as uuidv4 } from "uuid";
 import {
     BatchMessageHandler,
     BatchTopicMapHandler,
     IKafkaConsumerOptions,
     ITopicRegistryOptions,
+    KafkaConfig,
     KafkaRegisteryConsumerParams,
     SingleMessageHandler,
     SingleTopicMapHandler,
@@ -24,18 +25,27 @@ export class KafkaConsumerManager {
     private batchConsumersSet = new Set<any>();
 
     private logger: Logger;
+    private _config: KafkaConfig;
     private kafkaAdmin!: KafkaAdminManager;
     private static _instance: KafkaConsumerManager;
 
-    constructor(private readonly kafkaConnection: KafkaConnectionManager) {
+    constructor(
+        private readonly kafkaConnection: KafkaConnectionManager,
+        config: KafkaConfig
+    ) {
         this.logger = Logger.getInstance();
+        this._config = config;
     }
 
     public static getInstance(
-        connection: KafkaConnectionManager
+        connection: KafkaConnectionManager,
+        config: KafkaConfig
     ): KafkaConsumerManager {
         if (!KafkaConsumerManager._instance) {
-            KafkaConsumerManager._instance = new KafkaConsumerManager(connection);
+            KafkaConsumerManager._instance = new KafkaConsumerManager(
+                connection,
+                config
+            );
         }
         return KafkaConsumerManager._instance;
     }
@@ -48,7 +58,7 @@ export class KafkaConsumerManager {
         const topics = await this.kafkaAdmin.listTopics();
 
         for (const topic of topics) {
-            await this.getTransformedHandler(topic);
+            await this.transformedHandler(topic);
         }
 
         await Promise.all([this.runSingleConsumer(), this.runBatchConsumer()]);
@@ -70,7 +80,8 @@ export class KafkaConsumerManager {
                 }) => {
                     try {
                         const handlerMeta = this.getHandler(topic);
-                        if (!handlerMeta || handlerMeta.type !== "single") return;
+                        if (!handlerMeta || handlerMeta.type !== TopicHandlerTypes.single)
+                            return;
 
                         const handler = handlerMeta.handler as (data: any) => Promise<void>;
                         const messageValue = JSON.parse(message.value?.toString() || "{}");
@@ -111,14 +122,17 @@ export class KafkaConsumerManager {
                     const topic = batch.topic;
                     const handlerMeta = this.getHandler(topic);
 
-                    if (!handlerMeta || handlerMeta.type !== "batch") return;
+                    if (!handlerMeta || handlerMeta.type !== TopicHandlerTypes.batch)
+                        return;
 
                     const handler = handlerMeta.handler as (data: any) => Promise<void>;
                     const messages = [];
 
                     for (const message of batch.messages) {
                         try {
-                            const kafkaMessage = message.value?.toString() ?? "";
+                            const kafkaMessage = JSON.parse(
+                                message.value?.toString() ?? "{}"
+                            );
                             messages.push(kafkaMessage);
 
                             await heartbeat();
@@ -135,7 +149,12 @@ export class KafkaConsumerManager {
 
                     await heartbeat();
 
-                    await handler({ topic, messages, partition: batch.partition, offset: batch.lastOffset() });
+                    await handler({
+                        topic,
+                        messages,
+                        partition: batch.partition,
+                        offset: batch.lastOffset(),
+                    });
 
                     resolveOffset(batch.lastOffset());
                     await heartbeat();
@@ -151,7 +170,7 @@ export class KafkaConsumerManager {
         );
     }
 
-    private async getTransformedHandler(
+    private async transformedHandler(
         topic: string,
         isNewTopic: boolean = false
     ): Promise<void> {
@@ -182,7 +201,7 @@ export class KafkaConsumerManager {
         this.singleConsumersSet.add(consumer);
 
         this.topicHandlerMap.set(topic, {
-            type: "single",
+            type: TopicHandlerTypes.single,
             handler: this.singleTopicHandlerMap.get(topic)!.handler,
         });
         await consumer.subscribe({
@@ -207,7 +226,7 @@ export class KafkaConsumerManager {
 
                 const consumerGroupId =
                     handler?.options?.consumerGroup ||
-                    process.env.KAFKA_CONSUMER_GROUP_ID + "-single";
+                    this._config.consumerGroupId + "-single";
 
                 const readMessageFromBeginning =
                     handler?.options?.fromBeginning || false;
@@ -232,7 +251,7 @@ export class KafkaConsumerManager {
                 this.singleConsumersSet.add(consumer);
 
                 this.topicHandlerMap.set(topic, {
-                    type: "single",
+                    type: TopicHandlerTypes.single,
                     handler: value.handler,
                 });
                 await consumer.subscribe({
@@ -261,7 +280,7 @@ export class KafkaConsumerManager {
 
                 const consumerGroupId =
                     handler?.options?.consumerGroup ||
-                    process.env.KAFKA_CONSUMER_GROUP_ID + "-batch";
+                    this._config.consumerGroupId + "-batch";
 
                 const consumerOptions: IKafkaConsumerOptions = {
                     maxBytes: handler?.options?.maxBytes,
@@ -287,7 +306,7 @@ export class KafkaConsumerManager {
                 this.batchConsumersSet.add(consumer);
 
                 this.topicHandlerMap.set(topic, {
-                    type: "batch",
+                    type: TopicHandlerTypes.batch,
                     handler: value.handler,
                 });
                 await consumer.subscribe({
@@ -309,7 +328,11 @@ export class KafkaConsumerManager {
         handler: SingleMessageHandler,
         options?: ITopicRegistryOptions
     ) {
-        this.singleTopicHandlerMap.set(topic, { type: "single", handler, options });
+        this.singleTopicHandlerMap.set(topic, {
+            type: TopicHandlerTypes.single,
+            handler,
+            options,
+        });
     }
 
     setBatchTopicHandler(
@@ -317,7 +340,11 @@ export class KafkaConsumerManager {
         handler: BatchMessageHandler,
         options?: ITopicRegistryOptions
     ) {
-        this.batchTopicHandlerMap.set(topic, { type: "batch", handler, options });
+        this.batchTopicHandlerMap.set(topic, {
+            type: TopicHandlerTypes.batch,
+            handler,
+            options,
+        });
     }
 
     /**
@@ -340,12 +367,12 @@ export class KafkaConsumerManager {
             return;
         }
 
-        if (topicHandler.type === "batch") {
+        if (topicHandler.type === TopicHandlerTypes.batch) {
             const handler = topicHandler.handler as (data: any) => Promise<void>;
 
             const consumerGroupId =
                 topicHandler?.options?.consumerGroup ||
-                process.env.KAFKA_CONSUMER_GROUP_ID + "-batch";
+                this._config.consumerGroupId + "-batch";
 
             const batchConsumer = await this.kafkaConnection.createConsumer(
                 consumerGroupId
@@ -367,7 +394,9 @@ export class KafkaConsumerManager {
                     const messages = [];
                     for (const message of batch.messages) {
                         try {
-                            const kafkaMessage = message.value?.toString() ?? "";
+                            const kafkaMessage = JSON.parse(
+                                message.value?.toString() ?? "{}"
+                            );
                             messages.push(kafkaMessage);
 
                             await heartbeat();
@@ -389,12 +418,12 @@ export class KafkaConsumerManager {
                     await heartbeat();
                 },
             });
-        } else if (topicHandler.type === "single") {
+        } else if (topicHandler.type === TopicHandlerTypes.single) {
             const handler = topicHandler.handler as (data: any) => Promise<void>;
 
             const consumerGroupId =
                 topicHandler?.options?.consumerGroup ||
-                process.env.KAFKA_CONSUMER_GROUP_ID + "-single";
+                this._config.consumerGroupId + "-single";
 
             const singleConsumer = await this.kafkaConnection.createConsumer(
                 consumerGroupId
@@ -441,7 +470,7 @@ export class KafkaConsumerManager {
 
     handleTopicUpdatesEvents = async (params: KafkaRegisteryConsumerParams) => {
         this.logger.warn(`===== ${JSON.stringify(params)} =====`);
-        const topic = params.message.value;
+        const topic = params.message;
         this.logger.info(`Restarting consumer for new topic added ${topic}`);
         await this.restartConsumer(topic);
         this.logger.info(`Successfully restarted consumer for new topic ${topic}`);

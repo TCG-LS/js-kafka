@@ -2,7 +2,10 @@
 
 import { KafkaConfigManager } from "./config/kafka-config";
 import { DefaultTopics } from "./enums/kafka.enums";
-import { KafkaConfig } from "./interface/kafka.interface";
+import {
+    IGetKafkaClientOptions,
+    KafkaConfig,
+} from "./interface/kafka.interface";
 import { KafkaAdminManager } from "./kafka/admin-manager";
 import { KafkaConnectionManager } from "./kafka/connection-manager";
 import { KafkaConsumerManager } from "./kafka/consumer-manager";
@@ -22,21 +25,24 @@ export class KafkaClient {
     private isInitialized = false;
     private static instance: KafkaClient | null = null;
 
-    private constructor(userConfig: Partial<KafkaConfig> = {}) {
+    constructor(kafkaConfig: KafkaConfig) {
         this.logger = Logger.getInstance();
 
         // Load merged config
-        this.config = KafkaConfigManager.loadConfig(userConfig);
+        this.config = KafkaConfigManager.loadConfig(kafkaConfig);
 
         // Core components
         this.connection = KafkaConnectionManager.getInstance(this.config);
-        this.consumer = KafkaConsumerManager.getInstance(this.connection);
-        this.admin = KafkaAdminManager.getInstance(this.connection);
+        this.consumer = KafkaConsumerManager.getInstance(
+            this.connection,
+            this.config
+        );
+        this.admin = KafkaAdminManager.getInstance(this.connection, this.config);
         this.producer = KafkaProducerManager.getInstance(
             this.connection,
             this.config
         );
-        this.registry = new KafkaTopicHandlerRegistry(this.connection);
+        this.registry = new KafkaTopicHandlerRegistry(this.connection, this.config);
 
         // Circular reference resolution
         this.consumer.setAdmin(this.admin);
@@ -47,11 +53,9 @@ export class KafkaClient {
     /**
      * Singleton access
      */
-    public static getInstance(
-        userConfig: Partial<KafkaConfig> = {}
-    ): KafkaClient {
+    public static getInstance(kafkaConfig: KafkaConfig): KafkaClient {
         if (!KafkaClient.instance) {
-            KafkaClient.instance = new KafkaClient(userConfig);
+            KafkaClient.instance = new KafkaClient(kafkaConfig);
         }
         return KafkaClient.instance;
     }
@@ -93,10 +97,18 @@ export class KafkaClient {
 /**
  * Exported helper to create/get the singleton instance
  */
-export function getkafkaClient(
-    userConfig: Partial<KafkaConfig> = {}
+export function getKafkaClient(
+    kafkaConfig: KafkaConfig,
+    options?: IGetKafkaClientOptions
 ): KafkaClient {
-    return KafkaClient.getInstance(userConfig);
+    const isSingletonEnabled = options?.isSingletonEnabled ?? true; // default to true
+
+    if (isSingletonEnabled) {
+        console.log("Using singleton KafkaClient instance");
+        return KafkaClient.getInstance(kafkaConfig);
+    } else {
+        return new KafkaClient(kafkaConfig);
+    }
 }
 
 // Re-export useful types and utilities

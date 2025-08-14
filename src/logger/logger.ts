@@ -24,8 +24,6 @@ export class Logger {
     }
 
     debug(...args: any[]): void {
-        if (process.env.DEBUG) {
-            console.debug(`[DEBUG]`, new Date().toISOString(), ...args);
-        }
+        console.debug(`[DEBUG]`, new Date().toISOString(), ...args);
     }
 }

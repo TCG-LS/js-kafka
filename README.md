@@ -1,4 +1,4 @@
-# js-kafka
+# kafka-js
 
 A robust npm package for handling dynamic topic creation, subscription, and management in multi-instance microservice architectures. Built on top of KafkaJS, this package provides a simplified interface for Kafka operations while maintaining full flexibility and control.
 
@@ -15,33 +15,33 @@ A robust npm package for handling dynamic topic creation, subscription, and mana
 ## Installation
 
 ```bash
-npm install js-kafka
+npm install kafka-js
 ```
 
 ## Important Setup Requirements
 
-### 1. Create Topic Updates Topic (One-Time Setup)
+### 1. Create `Topic Updates` Topic (One-Time Setup)
 
-**⚠️ IMPORTANT:** Before using js-kafka in your environment, you must create a special topic named `topic-updates` once. This topic facilitates dynamic topic subscription for all consumers.
+**⚠️ IMPORTANT:** Before using kafka-js in your environment, you must create a special topic named `topic-updates` once. This topic facilitates dynamic topic subscription for all consumers.
 
 ```bash
 # Create the topic-updates topic (one-time setup per environment)
 kafka-topics.sh --create --topic topic-updates --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
 ```
 
-This topic is used internally by js-kafka to manage dynamic topic registration and subscription across all microservice instances.
+This topic is used internally by kafka-js to manage dynamic topic registration and subscription across all microservice instances.
 
 ### 2. Topic Naming Convention
 
-js-kafka uses a specific topic naming convention for dynamic subscription:
+kafka-js uses a specific topic naming convention for dynamic subscription:
 
-**Pattern:** `{env}-{serviceName}-{topicName}-{entityName}.{topicName}`
+**Pattern:** `{env}-{serviceName}-{entityName}.{topicName}`
 
 **Examples:**
 
-- `dev-user-service-events-user123.events`
-- `prod-order-service-notifications-order456.notifications`
-- `staging-payment-service-transactions-payment789.transactions`
+- `dev-user-service-user123.events`
+- `prod-order-service-order456.notifications`
+- `staging-payment-service-payment789.transactions`
 
 **How it works:**
 
@@ -64,7 +64,7 @@ await kafka.producer.sendMessage("user.events.topic", message);
 ```javascript
 // Use the naming convention or simple names without dots
 await kafka.producer.sendMessage("user-events", message);
-// or let js-kafka handle the naming convention internally
+// or let kafka-js handle the naming convention internally
 ```
 
 The dot (`.`) is reserved for the dynamic topic subscription pattern and should only appear before the final topic name segment.
@@ -74,9 +74,9 @@ The dot (`.`) is reserved for the dynamic topic subscription pattern and should 
 ### 1. Create Kafka Client
 
 ```javascript
-import { getkafkaClient } from "js-kafka";
+import { getKafkaClient } from "kafka-js";
 
-const kafka = getkafkaClient({
+const kafka = getKafkaClient({
   env: "dev",
   brokers: ["localhost:9092"],
   clientId: "kafka-default-service",
@@ -85,6 +85,22 @@ const kafka = getkafkaClient({
   replicationFactor: 1, // optional
   acks: 1, // optional
 });
+```
+
+#### You can also pass option in getKafkaClient:-
+
+```javascript
+const kafka = getKafkaClient(
+  {
+    env: "dev",
+    brokers: ["localhost:9092"],
+    clientId: "kafka-default-service",
+    serviceName: "user-service",
+  },
+  {
+    isSingletonEnabled: boolean, // It will return only one instance if called multiple times by defalut it is true.
+  }
+);
 ```
 
 ### 2. Register Consumers (Before Init)
@@ -144,7 +160,7 @@ By default, the producer is configured to acks the messages with the following l
 
 ### How It Works
 
-When you register a consumer with a topic name like `'user-events'`, js-kafka automatically:
+When you register a consumer with a topic name like `'user-events'`, kafka-js automatically:
 
 1. Subscribes to all existing topics that match the pattern `*.user-events`
 2. Monitors the `topic-updates` topic for new topic registrations
@@ -159,9 +175,9 @@ kafka.registry.registerBatch("notifications", handleNotifications, {
 });
 
 // This consumer will automatically receive messages from ALL of these topics:
-// - dev-user-service-notifications-user123.notifications
-// - dev-order-service-notifications-order456.notifications
-// - dev-payment-service-notifications-payment789.notifications
+// - dev-user-service-user123.notifications
+// - dev-order-service-order456.notifications
+// - dev-payment-service-payment789.notifications
 // - Any future topics ending with .notifications
 ```
 
@@ -170,13 +186,13 @@ kafka.registry.registerBatch("notifications", handleNotifications, {
 ```javascript
 // These will create topics following the naming convention:
 await kafka.producer.sendMessage("user-events", message, "user123");
-// Creates: {env}-{serviceName}-user-events-user123.user-events
+// Creates: {env}-{serviceName}-user123.user-events
 
 await kafka.producer.sendMessage("order-updates", message, "order456");
-// Creates: {env}-{serviceName}-order-updates-order456.order-updates
+// Creates: {env}-{serviceName}-order456.order-updates
 
 await kafka.producer.sendMessage("payments", message, "payment789");
-// Creates: {env}-{serviceName}-payments-payment789.payments
+// Creates: {env}-{serviceName}-payment789.payments
 ```
 
 #### Note:- When you sendMessage if the topic is not created sendMessage will automatically handle the new topic creation and topic-updates will handle the topic registration.
@@ -263,7 +279,7 @@ Registers a batch message handler for a topic pattern.
 ```typescript
 async function handleBatchMessages(params: { topic: string; messages: any[] }) {
   // Handle batch of messages
-  // topic will be the full topic name (e.g., 'dev-user-service-events-user123.events')
+  // topic will be the full topic name (e.g., 'dev-user-service-user123.events')
 }
 ```
 
@@ -287,14 +303,14 @@ async function handleSingleMessage(params: {
   offset: string;
 }) {
   // Handle single message
-  // topic will be the full topic name (e.g., 'dev-user-service-events-user123.events')
+  // topic will be the full topic name (e.g., 'dev-user-service-user123.events')
 }
 ```
 
 ## Complete Example
 
 ```javascript
-import { getkafkaClient } from "js-kafka";
+import { getkafkaClient } from "kafka-js";
 
 class KafkaService {
   constructor() {
@@ -335,6 +351,7 @@ class KafkaService {
     console.log("Kafka client initialized");
   }
 
+  // Batch message function
   async handleUserEvents(params) {
     const { topic, messages } = params;
     console.log(
@@ -346,6 +363,7 @@ class KafkaService {
     }
   }
 
+  // Single message function
   async handleNotification(params) {
     const { topic, message, partition, offset } = params;
     console.log(
@@ -367,7 +385,7 @@ class KafkaService {
       },
     };
 
-    // This will create topic: dev-user-service-user-events-user123.user-events if not present
+    // This will create topic: dev-user-service-user123.user-events if not present and send the message to the topic created
     await this._kafka.producer.sendMessage("user-events", message, userId);
   }
 
@@ -377,7 +395,7 @@ class KafkaService {
       value: notificationData,
     };
 
-    // This will create topic: dev-user-service-notifications-user123.notifications if not present
+    // This will create topic: dev-user-service-user123.notifications if not present and send the message to the topic created
     await this._kafka.producer.sendMessage("notifications", message, userId);
   }
 }
@@ -405,7 +423,7 @@ await kafkaService.sendNotification("user-123", {
 
 1. **One-Time Setup**: Ensure the `topic-updates` topic is created before deploying any services
 2. **Register Consumers First**: Always register all consumers before calling `init()`
-3. **Avoid Dots in Topic Names**: Don't use dots (`.`) in your base topic names - let js-kafka handle the naming convention
+3. **Avoid Dots in Topic Names**: Don't use dots (`.`) in your base topic names - let kafka-js handle the naming convention
 4. **Use Meaningful Topic Names**: Choose descriptive topic names that reflect the data flow
 5. **Consumer Groups**: Use appropriate consumer group names to ensure proper load balancing
 6. **Entity IDs**: Use meaningful entity IDs as they become part of the topic name

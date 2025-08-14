@@ -12,6 +12,7 @@ import { KafkaAdminManager } from "./admin-manager";
 export class KafkaProducerManager {
     private static _instance: KafkaProducerManager;
     private logger: Logger;
+    private _config: KafkaConfig;
     private admin!: KafkaAdminManager;
 
     constructor(
@@ -19,6 +20,7 @@ export class KafkaProducerManager {
         private config: KafkaConfig
     ) {
         this.logger = Logger.getInstance();
+        this._config = config;
     }
 
     public static getInstance(
@@ -44,13 +46,12 @@ export class KafkaProducerManager {
         entityId: string = "",
         options?: IKafkaProducerOptions
     ): Promise<void> {
-        if (!entityId && topic !== DefaultTopics.TOPIC_UPDATES) {
-            const error = `entityId not present while sending message to topic: ${topic}`;
-            this.logger.error(error);
-            throw new Error(error);
-        }
+        const transformedTopic = Utils.transformTopic(
+            topic,
+            entityId,
+            this._config
+        );
 
-        const transformedTopic = Utils.transformTopic(topic, entityId);
         try {
             await this.admin.createTopic(transformedTopic);
             const producer = await this.connection.createProducer("default-producer");
@@ -96,16 +97,15 @@ export class KafkaProducerManager {
     async sendBatchMessages(
         topic: string,
         messages: MessagePayload[],
-        entityId: string,
+        entityId: string = "",
         options?: IKafkaProducerOptions
     ): Promise<void> {
-        if (!entityId) {
-            const error = `entityId not present while sending batch messages to topic: ${topic}`;
-            this.logger.error(error);
-            throw new Error(error);
-        }
+        const transformedTopic = Utils.transformTopic(
+            topic,
+            entityId,
+            this._config
+        );
 
-        const transformedTopic = Utils.transformTopic(topic, entityId);
         try {
             await this.admin.createTopic(transformedTopic);
             const producer = await this.connection.createProducer("batch-producer");
