@@ -10,7 +10,10 @@ export class KafkaConfigManager {
             "consumerGroupId",
         ];
 
-        const missing = required.filter((key) => !config[key as keyof KafkaConfig]);
+        const missing = required.filter((key) => {
+            const value = config[key as keyof KafkaConfig];
+            return !value || (Array.isArray(value) && value.length === 0);
+        });
         if (missing.length > 0) {
             throw new Error(
                 `Missing required configuration properties: ${missing.join(", ")}`
@@ -27,10 +30,10 @@ export class KafkaConfigManager {
             clientId: config.clientId,
             serviceName: config.serviceName,
             consumerGroupId: config.consumerGroupId,
-            partitions: config.partitions || 1,
-            replicationFactor: config.replicationFactor || 1,
-            acks: config.acks || 1,
-            connectionTimeout: config.connectionTimeout || 3000,
+            partitions: config.partitions ?? 1,
+            replicationFactor: config.replicationFactor ?? 1,
+            acks: config.acks ?? 1,
+            connectionTimeout: config.connectionTimeout ?? 3000,
         };
     }
 }

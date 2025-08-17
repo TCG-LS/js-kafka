@@ -1,6 +1,6 @@
 {
   "name": "js-kafka",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A robust npm package for handling dynamic topic creation, subscription, and management in multi-instance microservice architectures. Built on top of KafkaJS, this package provides a simplified interface for Kafka operations while maintaining full flexibility and control.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,13 +24,19 @@
     "url": "https://github.com/TCG-LS/js-kafka/issues"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:verbose": "jest --verbose",
     "build": "tsc"
   },
   "author": "Aarush Mahajan <aarush.mahajan@tcgre.com>",
   "license": "MIT",
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.2.1",
+    "jest": "^30.0.5",
+    "ts-jest": "^29.4.1",
     "typescript": "^5.9.2"
   },
   "dependencies": {
