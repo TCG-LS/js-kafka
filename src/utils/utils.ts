@@ -30,7 +30,10 @@ export class Utils {
 
     static unTransformTopic(topicName: string): string {
         if (topicName === DefaultTopics.TOPIC_UPDATES) return topicName;
-        const topic = topicName?.split(".")[1];
-        return topic || topicName;
+        const dotIndex = topicName?.indexOf(".");
+        if (dotIndex !== undefined && dotIndex !== -1) {
+            return topicName.substring(dotIndex + 1);
+        }
+        return topicName;
     }
 }

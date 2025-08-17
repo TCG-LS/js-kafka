@@ -81,7 +81,7 @@ export class KafkaProducerManager {
             await producer.send({
                 topic: transformedTopic,
                 messages: [kafkaMessage],
-                acks: options?.acks || this.config.acks || 1,
+                acks: options?.acks ?? this.config.acks ?? 1,
             });
 
             this.logger.info(`Message sent to topic: ${transformedTopic}`);
@@ -143,7 +143,7 @@ export class KafkaProducerManager {
             await producer.send({
                 topic: transformedTopic,
                 messages: kafkaMessages,
-                acks: options?.acks || this.config.acks || 1,
+                acks: options?.acks ?? this.config.acks ?? 1,
             });
 
             this.logger.info(`Batch messages sent to topic: ${transformedTopic}`);

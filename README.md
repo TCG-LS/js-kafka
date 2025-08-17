@@ -452,14 +452,215 @@ await kafka.producer.sendMessage("order.status.updates", message, entityId); // 
 await kafka.producer.sendMessage("topic-updates", message, entityId); // ❌ Reserved
 ```
 
+## Testing
+
+js-kafka comes with a comprehensive test suite covering all functionality.
+
+### Running Tests
+
+#### Run All Tests
+```bash
+npm test
+```
+
+#### Run Tests with Coverage Report
+```bash
+npm run test:coverage
+```
+
+#### Run Tests in Watch Mode
+```bash
+npm run test:watch
+```
+
+#### Run Tests with Verbose Output
+```bash
+npm run test:verbose
+```
+
+### Running Individual Test Files
+
+#### Run a Specific Test File
+```bash
+# Run specific test file
+npm test src/config/__tests__/kafka-config.test.ts
+
+# Run all tests in a directory
+npm test src/kafka/__tests__/
+
+# Run tests matching a pattern
+npm test -- --testNamePattern="KafkaClient"
+```
+
+#### Run Tests for Specific Components
+```bash
+# Connection manager tests
+npm test src/kafka/__tests__/connection-manager.test.ts
+
+# Producer manager tests
+npm test src/kafka/__tests__/producer-manager.test.ts
+
+# Main entry point tests
+npm test src/__tests__/index.test.ts
+```
+
+### Viewing Coverage Reports
+
+After running `npm run test:coverage`, you can view detailed coverage reports:
+
+#### Terminal Output
+The coverage summary is displayed directly in the terminal showing:
+- Statement coverage
+- Branch coverage  
+- Function coverage
+- Line coverage
+- Uncovered line numbers
+
+#### HTML Coverage Report
+Open the detailed HTML report in your browser:
+```bash
+open coverage/lcov-report/index.html
+```
+
+The HTML report provides:
+- File-by-file coverage breakdown
+- Line-by-line coverage highlighting
+- Interactive coverage exploration
+- Detailed metrics for each file
+
+### Test Structure
+
+The test suite is organized as follows:
+
+```
+src/
+├── __tests__/                    # Main entry point tests
+├── config/__tests__/             # Configuration tests
+├── enums/__tests__/              # Enum tests
+├── kafka/__tests__/              # Kafka component tests
+│   ├── admin-manager.test.ts
+│   ├── connection-manager.test.ts
+│   ├── consumer-manager.test.ts
+│   ├── handler-registry.test.ts
+│   └── producer-manager.test.ts
+├── logger/__tests__/             # Logger tests
+└── utils/__tests__/              # Utility tests
+```
+
+### Test Features
+
+- **Comprehensive Mocking**: All external dependencies (KafkaJS, console methods) are properly mocked
+- **Error Handling**: Tests cover both success and failure scenarios
+- **Edge Cases**: Boundary conditions and edge cases are thoroughly tested
+- **Singleton Testing**: Proper testing of singleton patterns with cleanup
+- **Integration Scenarios**: Tests cover component interactions
+- **Type Safety**: Full TypeScript support in tests
+
+### Writing Tests
+
+When contributing new features, please ensure:
+
+1. **Add corresponding tests** for new functionality
+2. **Maintain coverage** above 90%
+3. **Test error scenarios** not just happy paths
+4. **Mock external dependencies** properly
+5. **Follow existing test patterns** and structure
+
+Example test structure:
+```typescript
+describe('ComponentName', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        // Reset any singletons or state
+    });
+
+    describe('methodName', () => {
+        it('should handle normal case', () => {
+            // Test implementation
+        });
+
+        it('should handle error case', () => {
+            // Test error scenarios
+        });
+
+        it('should handle edge cases', () => {
+            // Test boundary conditions
+        });
+    });
+});
+```
+
+## Development
+
+
+### Setup Development Environment
+```bash
+# Clone the repository
+git clone <repository-url>
+cd js-kafka
+
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+
+# Install as local dependencies
+npm link
+
+# Install in your own repo using
+npm i <repository-path>
+
+# Run tests
+npm test
+
+# Run tests in watch mode during development
+npm run test:watch
+```
+
+### Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm test` | Run all tests |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:verbose` | Run tests with detailed output |
+| `npm run build` | Build TypeScript to JavaScript |
+| `npm run dev` | Build in watch mode |
+
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please follow these guidelines:
+
+1. **Fork the repository** and create a feature branch
+2. **Write tests** for new functionality
+3. **Ensure all tests pass** with `npm test`
+4. **Maintain code coverage** above 90%
+5. **Follow TypeScript best practices**
+6. **Update documentation** as needed
+7. **Submit a Pull Request** with a clear description
+
+### Pull Request Checklist
+
+- [ ] Tests added for new functionality
+- [ ] All tests passing (`npm test`)
+- [ ] Code coverage maintained above 90%
+- [ ] TypeScript compilation successful (`npm run build`)
+- [ ] Documentation updated if needed
+- [ ] No breaking changes (or clearly documented)
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/TCG-LS/kafka-js/blob/master/LICENSE) file for details.
 
 ## Support
 
 For issues and questions, please open an issue on the GitHub repository.
+
+### Getting Help
+
+- **Documentation**: Check this README for comprehensive usage examples
+- **Issues**: Open a GitHub issue for bugs or feature requests  
+- **Tests**: Run the test suite to understand expected behavior
+- **Coverage**: Check the coverage report to understand tested scenarios
