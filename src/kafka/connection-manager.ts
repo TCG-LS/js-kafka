@@ -1,7 +1,30 @@
+/**
+ * @fileoverview Kafka connection management with singleton pattern
+ * @description Manages all Kafka connections including producers, consumers, and admin clients
+ */
+
 import { Kafka, Producer, Consumer, Admin } from "kafkajs";
 import { Logger } from "../logger/logger";
 import { IKafkaConsumerOptions, KafkaConfig } from "../interface/kafka.interface";
 
+/**
+ * Manages Kafka connections and provides factory methods for producers, consumers, and admin clients.
+ * 
+ * @description This class implements the singleton pattern to ensure consistent connection
+ * management across the application. It handles:
+ * - Kafka client initialization
+ * - Producer creation and management
+ * - Consumer creation and management
+ * - Admin client management
+ * - Graceful shutdown of all connections
+ * 
+ * @example
+ * ```typescript
+ * const connectionManager = KafkaConnectionManager.getInstance(config);
+ * const producer = await connectionManager.createProducer('my-producer');
+ * const consumer = await connectionManager.createConsumer('my-group');
+ * ```
+ */
 export class KafkaConnectionManager {
     private static instance: KafkaConnectionManager; // Singleton instance
 
@@ -11,6 +34,12 @@ export class KafkaConnectionManager {
     private admin: Admin | null = null;
     private logger: Logger;
 
+    /**
+     * Creates a new KafkaConnectionManager instance.
+     * 
+     * @param config - Kafka configuration
+     * @private
+     */
     constructor(private config: KafkaConfig) {
         this.kafka = new Kafka({
             clientId: this.config.clientId,
@@ -20,7 +49,12 @@ export class KafkaConnectionManager {
         this.logger.info("Kafka connection initialized");
     }
 
-    // Singleton getter
+    /**
+     * Gets or creates the singleton instance of KafkaConnectionManager.
+     * 
+     * @param config - Kafka configuration
+     * @returns The singleton KafkaConnectionManager instance
+     */
     public static getInstance(config: KafkaConfig): KafkaConnectionManager {
         if (!KafkaConnectionManager.instance) {
             KafkaConnectionManager.instance = new KafkaConnectionManager(config);
@@ -28,10 +62,24 @@ export class KafkaConnectionManager {
         return KafkaConnectionManager.instance;
     }
 
+    /**
+     * Gets the underlying Kafka client instance.
+     * 
+     * @returns The Kafka client instance
+     */
     public getKafka(): Kafka {
         return this.kafka;
     }
 
+    /**
+     * Creates or retrieves a Kafka producer.
+     * 
+     * @param producerId - Unique identifier for the producer
+     * @returns Promise resolving to Producer instance or undefined if creation fails
+     * 
+     * @description Creates a new producer if one doesn't exist with the given ID,
+     * otherwise returns the existing producer. Producers are cached for reuse.
+     */
     async createProducer(producerId: string): Promise<Producer | undefined> {
         try {
             if (!this.producers.has(producerId)) {
@@ -47,6 +95,16 @@ export class KafkaConnectionManager {
         }
     }
 
+    /**
+     * Creates or retrieves a Kafka consumer.
+     * 
+     * @param groupId - Consumer group ID
+     * @param options - Optional consumer configuration
+     * @returns Promise resolving to Consumer instance or undefined if creation fails
+     * 
+     * @description Creates a new consumer if one doesn't exist with the given group ID,
+     * otherwise returns the existing consumer. Consumers are cached for reuse.
+     */
     async createConsumer(
         groupId: string,
         options?: IKafkaConsumerOptions
@@ -68,6 +126,14 @@ export class KafkaConnectionManager {
         }
     }
 
+    /**
+     * Gets or creates the Kafka admin client.
+     * 
+     * @returns Promise resolving to Admin client instance
+     * 
+     * @description Creates and connects the admin client if it doesn't exist,
+     * otherwise returns the existing connected admin client.
+     */
     async getAdmin(): Promise<Admin> {
         if (!this.admin) {
             this.admin = this.kafka.admin();
@@ -77,7 +143,20 @@ export class KafkaConnectionManager {
     }
 
     /**
-     * Graceful shutdown of all producers, consumers, and admin client
+     * Performs graceful shutdown of all Kafka connections.
+     * 
+     * @returns Promise that resolves when all connections are closed
+     * 
+     * @description Cleanly disconnects all producers, consumers, and admin clients.
+     * This method should be called during application shutdown to prevent
+     * resource leaks and ensure proper cleanup.
+     * 
+     * @example
+     * ```typescript
+     * process.on('SIGTERM', async () => {
+     *   await connectionManager.shutdown();
+     * });
+     * ```
      */
     public async shutdown(): Promise<void> {
         this.logger.info("Shutting down Kafka connection...");

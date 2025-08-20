@@ -618,6 +618,90 @@ describe('KafkaConsumerManager', () => {
         });
     });
 
+    describe('Environment Filtering', () => {
+        let consumer: KafkaConsumerManager;
+
+        beforeEach(() => {
+            // Reset singleton to ensure fresh instance
+            (KafkaConsumerManager as any)._instance = null;
+            consumer = KafkaConsumerManager.getInstance(mockConnection, mockConfig);
+            consumer.setAdmin(mockAdmin);
+        });
+
+        it('should process topics for current environment', () => {
+            // Test the private method through type assertion
+            const result = (consumer as any).isTopicForCurrentEnvironment('test-user-service-123.events');
+            expect(result).toBe(true);
+        });
+
+        it('should skip topics for different environments', () => {
+            // Test the private method through type assertion
+            const result = (consumer as any).isTopicForCurrentEnvironment('prod-user-service-123.events');
+            expect(result).toBe(false);
+        });
+
+        it('should always process system topics', () => {
+            // Test the private method through type assertion
+            const result = (consumer as any).isTopicForCurrentEnvironment('topic-updates');
+            expect(result).toBe(true);
+        });
+
+        it('should filter topics during initialization', async () => {
+            const topics = [
+                'test-user-service-123.events',    // Should process (current env)
+                'prod-user-service-456.events',    // Should skip (different env)
+                'qa-order-service-789.orders',     // Should skip (different env)
+                'topic-updates',                   // Should process (system topic)
+                'test-payment-service-abc.payments' // Should process (current env)
+            ];
+            
+            mockAdmin.listTopics.mockResolvedValueOnce(topics);
+            
+            // Spy on transformedHandler to see which topics are processed
+            const transformedHandlerSpy = jest.spyOn(consumer as any, 'transformedHandler').mockResolvedValue(undefined);
+            
+            await consumer.initConsumer();
+            
+            // Should only call transformedHandler for topics matching current environment
+            expect(transformedHandlerSpy).toHaveBeenCalledTimes(3);
+            expect(transformedHandlerSpy).toHaveBeenCalledWith('test-user-service-123.events');
+            expect(transformedHandlerSpy).toHaveBeenCalledWith('topic-updates');
+            expect(transformedHandlerSpy).toHaveBeenCalledWith('test-payment-service-abc.payments');
+            
+            // Should not be called for different environment topics
+            expect(transformedHandlerSpy).not.toHaveBeenCalledWith('prod-user-service-456.events');
+            expect(transformedHandlerSpy).not.toHaveBeenCalledWith('qa-order-service-789.orders');
+            
+            transformedHandlerSpy.mockRestore();
+        });
+
+        it('should skip restart for topics from different environments', async () => {
+            const handler: SingleMessageHandler = jest.fn();
+            consumer.setSingleTopicHandler('user-created', handler);
+
+            MockedUtils.unTransformTopic.mockReturnValueOnce('user-created');
+
+            // Try to restart consumer for a prod topic when we're in test env
+            await consumer.restartConsumer('prod-user-service-123.user-created');
+
+            // Should not create consumer for different environment topic
+            expect(mockConnection.createConsumer).not.toHaveBeenCalled();
+        });
+
+        it('should restart consumer for topics from current environment', async () => {
+            const handler: SingleMessageHandler = jest.fn();
+            consumer.setSingleTopicHandler('user-created', handler);
+
+            MockedUtils.unTransformTopic.mockReturnValueOnce('user-created');
+
+            // Restart consumer for a test topic (current env)
+            await consumer.restartConsumer('test-user-service-123.user-created');
+
+            // Should create consumer for current environment topic
+            expect(mockConnection.createConsumer).toHaveBeenCalled();
+        });
+    });
+
     describe('Edge Cases', () => {
         let consumer: KafkaConsumerManager;
 
