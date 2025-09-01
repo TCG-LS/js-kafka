@@ -428,7 +428,7 @@ describe('KafkaConsumerManager', () => {
 
             await consumer.restartConsumer('test-service-org1.user-created');
 
-            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-single');
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-single-test');
             expect(mockConsumer.stop).toHaveBeenCalled();
             expect(mockConsumer.subscribe).toHaveBeenCalledWith({
                 topic: 'test-service-org1.user-created',
@@ -445,7 +445,7 @@ describe('KafkaConsumerManager', () => {
 
             await consumer.restartConsumer('test-service-org1.user-batch');
 
-            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-batch');
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-batch-test');
             expect(mockConsumer.stop).toHaveBeenCalled();
             expect(mockConsumer.subscribe).toHaveBeenCalledWith({
                 topic: 'test-service-org1.user-batch',
@@ -654,24 +654,24 @@ describe('KafkaConsumerManager', () => {
                 'topic-updates',                   // Should process (system topic)
                 'test-payment-service-abc.payments' // Should process (current env)
             ];
-            
+
             mockAdmin.listTopics.mockResolvedValueOnce(topics);
-            
+
             // Spy on transformedHandler to see which topics are processed
             const transformedHandlerSpy = jest.spyOn(consumer as any, 'transformedHandler').mockResolvedValue(undefined);
-            
+
             await consumer.initConsumer();
-            
+
             // Should only call transformedHandler for topics matching current environment
             expect(transformedHandlerSpy).toHaveBeenCalledTimes(3);
             expect(transformedHandlerSpy).toHaveBeenCalledWith('test-user-service-123.events');
             expect(transformedHandlerSpy).toHaveBeenCalledWith('topic-updates');
             expect(transformedHandlerSpy).toHaveBeenCalledWith('test-payment-service-abc.payments');
-            
+
             // Should not be called for different environment topics
             expect(transformedHandlerSpy).not.toHaveBeenCalledWith('prod-user-service-456.events');
             expect(transformedHandlerSpy).not.toHaveBeenCalledWith('qa-order-service-789.orders');
-            
+
             transformedHandlerSpy.mockRestore();
         });
 
