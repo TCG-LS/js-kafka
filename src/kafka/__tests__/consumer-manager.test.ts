@@ -271,6 +271,7 @@ describe('KafkaConsumerManager', () => {
                 message: { userId: '123' },
                 partition: 0,
                 offset: '0',
+                heartbeat: expect.any(Function),
             });
         });
 
@@ -373,6 +374,7 @@ describe('KafkaConsumerManager', () => {
                 messages: [{ userId: '1' }, { userId: '2' }],
                 partition: 0,
                 offset: '1',
+                heartbeat: expect.any(Function),
             });
         });
 
@@ -428,7 +430,11 @@ describe('KafkaConsumerManager', () => {
 
             await consumer.restartConsumer('test-service-org1.user-created');
 
-            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-single-test');
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-single-test', {
+                maxBytes: undefined,
+                sessionTimeout: undefined,
+                heartbeatInterval: undefined,
+            });
             expect(mockConsumer.stop).toHaveBeenCalled();
             expect(mockConsumer.subscribe).toHaveBeenCalledWith({
                 topic: 'test-service-org1.user-created',
@@ -445,7 +451,11 @@ describe('KafkaConsumerManager', () => {
 
             await consumer.restartConsumer('test-service-org1.user-batch');
 
-            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-batch-test');
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-batch-test', {
+                maxBytes: undefined,
+                sessionTimeout: undefined,
+                heartbeatInterval: undefined,
+            });
             expect(mockConsumer.stop).toHaveBeenCalled();
             expect(mockConsumer.subscribe).toHaveBeenCalledWith({
                 topic: 'test-service-org1.user-batch',
@@ -511,6 +521,7 @@ describe('KafkaConsumerManager', () => {
                 message: 'test-service-org1.user-created',
                 partition: 0,
                 offset: '0',
+                heartbeat: jest.fn(),
             };
 
             MockedUtils.unTransformTopic.mockReturnValueOnce('user-created');
@@ -742,6 +753,7 @@ describe('KafkaConsumerManager', () => {
                 message: {},
                 partition: 0,
                 offset: '0',
+                heartbeat: expect.any(Function),
             });
         });
 
@@ -782,6 +794,7 @@ describe('KafkaConsumerManager', () => {
                 messages: [{}],
                 partition: 0,
                 offset: '0',
+                heartbeat: expect.any(Function),
             });
         });
     });
