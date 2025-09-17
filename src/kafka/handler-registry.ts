@@ -105,7 +105,7 @@ export class KafkaTopicHandlerRegistry {
      *   await processBatch(messages);
      * }, {
      *   consumerGroup: 'analytics-batch',
-     *   maxBytes: 1048576, // 1MB batches
+     *   maxBytes: 262144, // .25MB batches
      *   fromBeginning: true
      * });
      * ```

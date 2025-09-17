@@ -113,7 +113,7 @@ export class KafkaConnectionManager {
             if (!this.consumers.has(groupId)) {
                 const consumer = this.kafka.consumer({
                     groupId,
-                    maxBytes: options?.maxBytes || 1048576, // Default to 1MB
+                    maxBytes: options?.maxBytes || 262144, // Default to .25MB
                     sessionTimeout: options?.sessionTimeout || 60000, // Default to 60 seconds
                     heartbeatInterval: options?.heartbeatInterval || 30000, // Default to 30 seconds
                 });
