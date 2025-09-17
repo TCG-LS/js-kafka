@@ -85,6 +85,8 @@ interface ISingleKafkaConsumerParams {
     partition?: number;
     /** Message offset in the partition */
     offset?: string;
+    /** Heartbeat function to signal consumer is alive */
+    heartbeat: () => Promise<void>;
 }
 
 /**
@@ -99,6 +101,8 @@ interface IBulkKafkaConsumerParam {
     partition?: number;
     /** Last message offset in the batch */
     offset?: string;
+    /** Heartbeat function to signal consumer is alive */
+    heartbeat: () => Promise<void>;
 }
 
 /**
@@ -168,6 +172,8 @@ export interface KafkaRegisteryConsumerParams {
     partition?: number;
     /** Message offset */
     offset?: string;
+    /** Heartbeat function to signal consumer is alive */
+    heartbeat: () => Promise<void>;
 }
 
 /**

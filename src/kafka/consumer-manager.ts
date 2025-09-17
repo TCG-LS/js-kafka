@@ -123,7 +123,7 @@ export class KafkaConsumerManager {
                 this.logger.debug(`Skipping topic ${topic} - not for environment ${this._config.env}`);
                 continue;
             }
-            
+
             await this.transformedHandler(topic);
         }
 
@@ -153,7 +153,7 @@ export class KafkaConsumerManager {
                         const messageValue = JSON.parse(message.value?.toString() || "{}");
                         const offset = message.offset;
 
-                        const params = { topic, message: messageValue, partition, offset };
+                        const params = { topic, message: messageValue, partition, offset, heartbeat };
                         await handler(params);
 
                         await heartbeat();
@@ -220,6 +220,7 @@ export class KafkaConsumerManager {
                         messages,
                         partition: batch.partition,
                         offset: batch.lastOffset(),
+                        heartbeat,
                     });
 
                     resolveOffset(batch.lastOffset());
@@ -299,7 +300,14 @@ export class KafkaConsumerManager {
 
         const consumerGroupId =
             handler?.options?.consumerGroup || `topic-updates-${uuidv4()}-single`;
-        const consumer = await this.kafkaConnection.createConsumer(consumerGroupId);
+
+        const consumerOptions: IKafkaConsumerOptions = {
+            maxBytes: handler?.options?.maxBytes,
+            sessionTimeout: handler?.options?.sessionTimeout,
+            heartbeatInterval: handler?.options?.heartbeatInterval,
+        };
+
+        const consumer = await this.kafkaConnection.createConsumer(consumerGroupId, consumerOptions);
 
         if (!consumer) {
             this.logger.warn(
@@ -342,6 +350,7 @@ export class KafkaConsumerManager {
                     handler?.options?.fromBeginning || false;
 
                 const consumerOptions: IKafkaConsumerOptions = {
+                    maxBytes: handler?.options?.maxBytes,
                     sessionTimeout: handler?.options?.sessionTimeout,
                     heartbeatInterval: handler?.options?.heartbeatInterval,
                 };
@@ -520,8 +529,15 @@ export class KafkaConsumerManager {
                 topicHandler?.options?.consumerGroup ||
                 this._config.consumerGroupId + `-batch-${this._config.env}`;
 
+            const consumerOptions: IKafkaConsumerOptions = {
+                maxBytes: topicHandler?.options?.maxBytes,
+                sessionTimeout: topicHandler?.options?.sessionTimeout,
+                heartbeatInterval: topicHandler?.options?.heartbeatInterval,
+            };
+
             const batchConsumer = await this.kafkaConnection.createConsumer(
-                consumerGroupId
+                consumerGroupId,
+                consumerOptions
             );
 
             if (!batchConsumer) {
@@ -557,6 +573,9 @@ export class KafkaConsumerManager {
                     const data = {
                         topic: batch.topic,
                         messages: messages,
+                        partition: batch.partition,
+                        offset: batch.lastOffset(),
+                        heartbeat,
                     };
                     await handler(data);
 
@@ -571,8 +590,15 @@ export class KafkaConsumerManager {
                 topicHandler?.options?.consumerGroup ||
                 this._config.consumerGroupId + `-single-${this._config.env}`;
 
+            const consumerOptions: IKafkaConsumerOptions = {
+                maxBytes: topicHandler?.options?.maxBytes,
+                sessionTimeout: topicHandler?.options?.sessionTimeout,
+                heartbeatInterval: topicHandler?.options?.heartbeatInterval,
+            };
+
             const singleConsumer = await this.kafkaConnection.createConsumer(
-                consumerGroupId
+                consumerGroupId,
+                consumerOptions
             );
 
             if (!singleConsumer) {
@@ -596,6 +622,7 @@ export class KafkaConsumerManager {
                             message: messageValue,
                             partition,
                             offset,
+                            heartbeat,
                         };
 
                         await handler(data);
