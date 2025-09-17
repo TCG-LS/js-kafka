@@ -129,7 +129,7 @@ describe('KafkaConnectionManager', () => {
 
             expect(mockKafkaInstance.consumer).toHaveBeenCalledWith({
                 groupId,
-                maxBytes: 1048576,
+                maxBytes: 262144,
                 sessionTimeout: 60000,
                 heartbeatInterval: 30000,
             });
