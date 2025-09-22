@@ -122,6 +122,9 @@ export class KafkaAdminManager {
             this.logger.info(`Topic ${topicName} created successfully`);
             this.topicMap.add(topicName);
 
+            // Wait for 2 seconds to allow Kafka brokers to propagate topic creation
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
             await this.producer.sendMessage(
                 DefaultTopics.TOPIC_UPDATES,
                 { value: topicName },
