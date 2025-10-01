@@ -344,7 +344,7 @@ export class KafkaConsumerManager {
 
                 const consumerGroupId =
                     handler?.options?.consumerGroup ||
-                    this._config.consumerGroupId + `-single-${this._config.env}`;
+                    `${this._config.consumerGroupId}-${key}-single-${this._config.env}`;
 
                 const readMessageFromBeginning =
                     handler?.options?.fromBeginning || false;
@@ -399,7 +399,7 @@ export class KafkaConsumerManager {
 
                 const consumerGroupId =
                     handler?.options?.consumerGroup ||
-                    this._config.consumerGroupId + `-batch-${this._config.env}`;
+                    `${this._config.consumerGroupId}-${key}-batch-${this._config.env}`;
 
                 const consumerOptions: IKafkaConsumerOptions = {
                     maxBytes: handler?.options?.maxBytes,
@@ -527,7 +527,7 @@ export class KafkaConsumerManager {
 
             const consumerGroupId =
                 topicHandler?.options?.consumerGroup ||
-                this._config.consumerGroupId + `-batch-${this._config.env}`;
+                `${this._config.consumerGroupId}-${kt}-batch-${this._config.env}`;
 
             const consumerOptions: IKafkaConsumerOptions = {
                 maxBytes: topicHandler?.options?.maxBytes,
@@ -588,7 +588,7 @@ export class KafkaConsumerManager {
 
             const consumerGroupId =
                 topicHandler?.options?.consumerGroup ||
-                this._config.consumerGroupId + `-single-${this._config.env}`;
+                `${this._config.consumerGroupId}-${kt}-single-${this._config.env}`;
 
             const consumerOptions: IKafkaConsumerOptions = {
                 maxBytes: topicHandler?.options?.maxBytes,
