@@ -160,7 +160,7 @@ export class KafkaConsumerManager {
                     } catch (error) {
                         this.logger.error(
                             `Error processing message from topic ${topic}:`,
-                            error
+                            JSON.stringify(error)
                         );
                     }
                 },
@@ -186,10 +186,15 @@ export class KafkaConsumerManager {
                     heartbeat: () => Promise<void>;
                 }) => {
                     const topic = batch.topic;
+
+                    this.logger.info(`inside batch consumer for topic ${topic}`)
+
                     const handlerMeta = this.getHandler(topic);
 
-                    if (!handlerMeta || handlerMeta.type !== TopicHandlerTypes.batch)
+                    if (!handlerMeta || handlerMeta.type !== TopicHandlerTypes.batch) {
+                        this.logger.info(`inside not handling function of batch consumer for topic ${topic}`)
                         return;
+                    }
 
                     const handler = handlerMeta.handler as (data: any) => Promise<void>;
                     const messages = [];
@@ -215,13 +220,18 @@ export class KafkaConsumerManager {
 
                     await heartbeat();
 
-                    await handler({
-                        topic,
-                        messages,
-                        partition: batch.partition,
-                        offset: batch.lastOffset(),
-                        heartbeat,
-                    });
+                    try {
+                        await handler({
+                            topic,
+                            messages,
+                            partition: batch.partition,
+                            offset: batch.lastOffset(),
+                            heartbeat,
+                        });
+                    } catch (error) {
+                        this.logger.error(`Error in topic handler ${topic} error ${JSON.stringify(error)}`)
+                    }
+
 
                     resolveOffset(batch.lastOffset());
                     await heartbeat();
@@ -567,6 +577,7 @@ export class KafkaConsumerManager {
                                 `Error processing message [${batch.topic} partition ${batch.partition} offset ${message.offset}]:`,
                                 error
                             );
+                            await heartbeat();
                         }
                     }
 
