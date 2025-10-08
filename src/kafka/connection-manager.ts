@@ -85,6 +85,7 @@ export class KafkaConnectionManager {
             if (!this.producers.has(producerId)) {
                 const producer = this.kafka.producer({
                     allowAutoTopicCreation: false,
+                    retry: { retries: 0 }
                 });
                 await producer.connect();
                 this.producers.set(producerId, producer);
@@ -116,13 +117,15 @@ export class KafkaConnectionManager {
                     maxBytes: options?.maxBytes || 262144, // Default to .25MB
                     sessionTimeout: options?.sessionTimeout || 60000, // Default to 60 seconds
                     heartbeatInterval: options?.heartbeatInterval || 30000, // Default to 30 seconds
+                    retry: { retries: 0 },
+                    allowAutoTopicCreation: false,
                 });
                 await consumer.connect();
                 this.consumers.set(groupId, consumer);
             }
             return this.consumers.get(groupId)!;
         } catch (error) {
-            this.logger.error(`Error while creating consumer!!`);
+            this.logger.error(`Error while creating consumer!! error: ${error}`);
         }
     }
 

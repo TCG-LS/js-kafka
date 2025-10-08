@@ -202,6 +202,24 @@ export class KafkaClient {
             this.logger.error("❌ Error during KafkaClient shutdown:", error);
         }
     }
+
+    async createTopicPublic(
+        topicName: string,
+        serviceName: string,
+        entityId: string,
+        numPartitions?: number,
+        replicationFactor?: number) {
+
+        return this.admin.createTopicPublic(topicName, serviceName, entityId, numPartitions, replicationFactor);
+    }
+
+    async sendPublicTopicUpdate(
+        topicName: string,
+        serviceName: string,
+        entityId: string
+    ) {
+        return this.admin.sendPublicTopicUpdate(topicName, serviceName, entityId)
+    }
 }
 
 /**

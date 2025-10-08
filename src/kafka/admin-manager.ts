@@ -6,6 +6,7 @@
 import { DefaultTopics } from "../enums/kafka.enums";
 import { KafkaConfig } from "../interface/kafka.interface";
 import { Logger } from "../logger/logger";
+import { Utils } from "../utils/utils";
 import { KafkaConnectionManager } from "./connection-manager";
 import { KafkaProducerManager } from "./producer-manager";
 
@@ -111,6 +112,7 @@ export class KafkaAdminManager {
         try {
             const topicCreated = await admin.createTopics({
                 topics: [{ topic: topicName, numPartitions, replicationFactor }],
+                waitForLeaders: true
             });
 
             if (!topicCreated) {
@@ -123,7 +125,7 @@ export class KafkaAdminManager {
             this.topicMap.add(topicName);
 
             // Wait for 2 seconds to allow Kafka brokers to propagate topic creation
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // await new Promise(resolve => setTimeout(resolve, 10000));
 
             await this.producer.sendMessage(
                 DefaultTopics.TOPIC_UPDATES,
@@ -134,7 +136,6 @@ export class KafkaAdminManager {
             this.logger.error(
                 `Error while creating topic: ${topicName} error:: ${error.message}`
             );
-            throw error;
         }
     }
 
@@ -149,6 +150,62 @@ export class KafkaAdminManager {
     public async listTopics(): Promise<string[]> {
         const admin = await this.kafkaConnection.getAdmin();
         return await admin.listTopics();
+    }
+
+    async createTopicPublic(
+        topic: string,
+        serviceName: string,
+        entityId: string,
+        numPartitions: number = 1,
+        replicationFactor: number = 0
+    ) {
+
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.serviceName = serviceName;
+
+        const topicName = Utils.transformTopic(topic, entityId, config)
+
+        try {
+
+            const admin = await this.kafkaConnection.getAdmin();
+
+            const topicCreated = await admin.createTopics({
+                topics: [{ topic: topicName, numPartitions, replicationFactor }],
+                waitForLeaders: true
+            });
+
+            if (!topicCreated) {
+                this.logger.warn(`Topic ${topicName} already exists`);
+                this.topicMap.add(topicName);
+                return;
+            }
+
+            this.logger.info(`Topic ${topicName} created successfully`);
+            this.topicMap.add(topicName);
+
+        } catch (error) {
+            this.logger.error(
+                `Error while creating topic: ${topicName} error:: ${JSON.stringify(error)}`
+            );
+        }
+
+    }
+
+    async sendPublicTopicUpdate(
+        topic: string,
+        serviceName: string,
+        entityId: string
+    ) {
+
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.serviceName = serviceName;
+
+        const topicName = Utils.transformTopic(topic, entityId, config)
+
+        await this.producer.sendMessage(
+            DefaultTopics.TOPIC_UPDATES,
+            { value: topicName },
+        );
     }
 
     /**
