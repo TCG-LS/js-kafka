@@ -7,7 +7,9 @@ import { DefaultTopics, TopicHandlerTypes } from "../enums/kafka.enums";
 import { v4 as uuidv4 } from "uuid";
 import {
     BatchMessageHandler,
+    BatchMessageHandlerWithManualCommit,
     BatchTopicMapHandler,
+    BatchTopicMapHandlerWithManualCommit,
     IKafkaConsumerOptions,
     ITopicRegistryOptions,
     KafkaConfig,
@@ -44,11 +46,13 @@ import { Utils } from "../utils/utils";
  */
 export class KafkaConsumerManager {
     private batchTopicHandlerMap = new Map<string, BatchTopicMapHandler>();
+    private batchManualCommitTopicHandlerMap = new Map<string, BatchTopicMapHandlerWithManualCommit>();
     private singleTopicHandlerMap = new Map<string, SingleTopicMapHandler>();
     private topicHandlerMap = new Map<string, TopicHandler>();
 
     private singleConsumersSet = new Set<any>();
     private batchConsumersSet = new Set<any>();
+    private batchManualCommitConsumersSet = new Set<any>();
 
     private logger: Logger;
     private _config: KafkaConfig;
@@ -127,7 +131,11 @@ export class KafkaConsumerManager {
             await this.transformedHandler(topic);
         }
 
-        await Promise.all([this.runSingleConsumer(), this.runBatchConsumer()]);
+        await Promise.all([
+            this.runSingleConsumer(),
+            this.runBatchConsumer(),
+            this.runBatchConsumerWithManualCommit()
+        ]);
     }
 
     private async runSingleConsumer() {
@@ -240,19 +248,110 @@ export class KafkaConsumerManager {
         }
     }
 
+    private async runBatchConsumerWithManualCommit() {
+        for (const consumer of this.batchManualCommitConsumersSet) {
+            await consumer.run({
+                eachBatchAutoResolve: false, // Disable auto-resolve for manual commit
+                eachBatch: async ({
+                    batch,
+                    resolveOffset,
+                    heartbeat,
+                }: {
+                    batch: {
+                        topic: string;
+                        partition: number;
+                        messages: Array<{
+                            value?: Buffer | null;
+                            offset: string;
+                            timestamp?: string;
+                            key?: Buffer | null;
+                        }>;
+                        lastOffset: () => string;
+                    };
+                    resolveOffset: (offset: string) => void;
+                    heartbeat: () => Promise<void>;
+                }) => {
+                    const topic = batch.topic;
+
+                    this.logger.info(`inside batch consumer with manual commit for topic ${topic}`)
+
+                    const handlerMeta = this.getHandler(topic);
+
+                    if (!handlerMeta || handlerMeta.type !== TopicHandlerTypes.batchManualCommit) {
+                        this.logger.info(`inside not handling function of batch manual commit consumer for topic ${topic}`)
+                        return;
+                    }
+
+                    const handler = handlerMeta.handler as BatchMessageHandlerWithManualCommit;
+                    const messages = [];
+
+                    for (const message of batch.messages) {
+                        try {
+                            const kafkaMessage = JSON.parse(
+                                message.value?.toString() ?? "{}"
+                            );
+
+                            // Preserve full message with offset and metadata
+                            messages.push({
+                                ...kafkaMessage,
+                                _metadata: {
+                                    offset: message.offset,
+                                    partition: batch.partition,
+                                    timestamp: message.timestamp,
+                                    key: message.key?.toString()
+                                }
+                            });
+
+                            await heartbeat();
+                        } catch (error) {
+                            this.logger.error(
+                                `Error processing message [${batch.topic} partition ${batch.partition} offset ${message.offset}]:`,
+                                error
+                            );
+                            await heartbeat();
+                        }
+                    }
+
+                    this.logger.info(`Batch processing message with manual commit ${batch.topic}`);
+
+                    await heartbeat();
+
+                    try {
+                        // Pass resolveOffset to the handler for manual commit control
+                        await handler({
+                            topic,
+                            messages,
+                            partition: batch.partition,
+                            offset: batch.lastOffset(),
+                            heartbeat,
+                            resolveOffset, // Handler now controls when to commit offset
+                        });
+                    } catch (error) {
+                        this.logger.error(`Error in topic handler ${topic} error ${JSON.stringify(error)}`)
+                        // Note: We don't auto-resolve offset on error - handler should decide
+                    }
+
+                    // No automatic resolveOffset call here - handler is responsible
+                    await heartbeat();
+                },
+            });
+        }
+    }
+
     /**
      * Retrieves a topic handler for the specified topic.
      * 
      * @param topic - Topic name to find handler for
      * @returns Handler configuration or undefined if not found
      * 
-     * @description Searches both single and batch handler maps to find
+     * @description Searches single, batch, and batch manual commit handler maps to find
      * a registered handler for the given topic name.
      */
     getNewTopicHandler(topic: string) {
         return (
             this.singleTopicHandlerMap.get(topic) ||
-            this.batchTopicHandlerMap.get(topic)
+            this.batchTopicHandlerMap.get(topic) ||
+            this.batchManualCommitTopicHandlerMap.get(topic)
         );
     }
 
@@ -302,6 +401,7 @@ export class KafkaConsumerManager {
 
         if (await this.singleTopicSubscription(topic, isNewTopic)) return;
         if (await this.batchTopicSubscription(topic, isNewTopic)) return;
+        if (await this.batchManualCommitTopicSubscription(topic, isNewTopic)) return;
     }
 
     private async topicUpdatedSubscription(topic: string) {
@@ -448,6 +548,61 @@ export class KafkaConsumerManager {
         return false;
     }
 
+    private async batchManualCommitTopicSubscription(
+        topic: string,
+        isNewTopic: boolean = false
+    ): Promise<boolean> {
+        for (const [key, value] of this.batchManualCommitTopicHandlerMap.entries()) {
+            const topicMatchCondition = !isNewTopic
+                ? topic.endsWith(`.${key}`)
+                : topic === key;
+
+            if (topicMatchCondition) {
+                const kt = topic?.split(".")[1];
+                const handler = this.batchManualCommitTopicHandlerMap.get(kt);
+                if (!handler) return false;
+
+                const consumerGroupId =
+                    handler?.options?.consumerGroup ||
+                    `${this._config.consumerGroupId}-${key}-batch-manual-commit-${this._config.env}`;
+
+                const consumerOptions: IKafkaConsumerOptions = {
+                    maxBytes: handler?.options?.maxBytes,
+                    sessionTimeout: handler?.options?.sessionTimeout,
+                    heartbeatInterval: handler?.options?.heartbeatInterval,
+                };
+
+                const readMessageFromBeginning =
+                    handler?.options?.fromBeginning || false;
+
+                const consumer = await this.kafkaConnection.createConsumer(
+                    consumerGroupId,
+                    consumerOptions
+                );
+
+                if (!consumer) {
+                    this.logger.warn(
+                        `No consumer found with above consumer group ${consumerGroupId}`
+                    );
+                    return false;
+                }
+
+                this.batchManualCommitConsumersSet.add(consumer);
+
+                this.topicHandlerMap.set(topic, {
+                    type: TopicHandlerTypes.batchManualCommit,
+                    handler: value.handler,
+                });
+                await consumer.subscribe({
+                    topic,
+                    fromBeginning: readMessageFromBeginning,
+                });
+                return true;
+            }
+        }
+        return false;
+    }
+
     private getHandler(topic: string) {
         return this.topicHandlerMap.get(topic);
     }
@@ -491,6 +646,30 @@ export class KafkaConsumerManager {
     ) {
         this.batchTopicHandlerMap.set(topic, {
             type: TopicHandlerTypes.batch,
+            handler,
+            options,
+        });
+    }
+
+    /**
+     * Registers a handler for batch message processing with manual offset management.
+     * 
+     * @param topic - Base topic name to handle
+     * @param handler - Function to process message batches with manual commit control
+     * @param options - Optional consumer configuration
+     * 
+     * @description Registers a handler that will be called with batches of
+     * messages received on topics matching the pattern *.{topic}. The handler
+     * receives a resolveOffset function to manually control when offsets are committed.
+     * This allows for more precise control over message processing acknowledgment.
+     */
+    setBatchTopicHandlerWithManualCommit(
+        topic: string,
+        handler: BatchMessageHandlerWithManualCommit,
+        options?: ITopicRegistryOptions
+    ) {
+        this.batchManualCommitTopicHandlerMap.set(topic, {
+            type: TopicHandlerTypes.batchManualCommit,
             handler,
             options,
         });
@@ -591,6 +770,79 @@ export class KafkaConsumerManager {
                     await handler(data);
 
                     resolveOffset(batch.lastOffset());
+                    await heartbeat();
+                },
+            });
+        } else if (topicHandler.type === TopicHandlerTypes.batchManualCommit) {
+            const handler = topicHandler.handler as BatchMessageHandlerWithManualCommit;
+
+            const consumerGroupId =
+                topicHandler?.options?.consumerGroup ||
+                `${this._config.consumerGroupId}-${kt}-batch-manual-commit-${this._config.env}`;
+
+            const consumerOptions: IKafkaConsumerOptions = {
+                maxBytes: topicHandler?.options?.maxBytes,
+                sessionTimeout: topicHandler?.options?.sessionTimeout,
+                heartbeatInterval: topicHandler?.options?.heartbeatInterval,
+            };
+
+            const batchManualCommitConsumer = await this.kafkaConnection.createConsumer(
+                consumerGroupId,
+                consumerOptions
+            );
+
+            if (!batchManualCommitConsumer) {
+                this.logger.warn(
+                    `No consumer found with above consumer group ${consumerGroupId}`
+                );
+                return;
+            }
+
+            await batchManualCommitConsumer.stop();
+            await batchManualCommitConsumer.subscribe({ topic: topicName, fromBeginning: true });
+
+            await batchManualCommitConsumer.run({
+                eachBatchAutoResolve: false, // Disable auto-resolve for manual commit
+                eachBatch: async ({ batch, resolveOffset, heartbeat }) => {
+                    const messages = [];
+                    for (const message of batch.messages) {
+                        try {
+                            const parsedValue = JSON.parse(
+                                message.value?.toString() ?? "{}"
+                            );
+
+                            // Preserve full message with offset and metadata
+                            messages.push({
+                                ...parsedValue,
+                                _metadata: {
+                                    offset: message.offset,
+                                    partition: batch.partition,
+                                    timestamp: message.timestamp,
+                                    key: message.key?.toString()
+                                }
+                            });
+
+                            await heartbeat();
+                        } catch (error) {
+                            this.logger.error(
+                                `Error processing message [${batch.topic} partition ${batch.partition} offset ${message.offset}]:`,
+                                error
+                            );
+                            await heartbeat();
+                        }
+                    }
+
+                    const data = {
+                        topic: batch.topic,
+                        messages: messages,
+                        partition: batch.partition,
+                        offset: batch.lastOffset(),
+                        heartbeat,
+                        resolveOffset, // Pass resolveOffset to handler for manual control
+                    };
+                    await handler(data);
+
+                    // No automatic resolveOffset call - handler controls it
                     await heartbeat();
                 },
             });

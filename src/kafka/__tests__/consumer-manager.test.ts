@@ -1,7 +1,7 @@
 import { KafkaConsumerManager } from '../consumer-manager';
 import { KafkaConnectionManager } from '../connection-manager';
 import { KafkaAdminManager } from '../admin-manager';
-import { KafkaConfig, SingleMessageHandler, BatchMessageHandler } from '../../interface/kafka.interface';
+import { KafkaConfig, SingleMessageHandler, BatchMessageHandler, BatchMessageHandlerWithManualCommit } from '../../interface/kafka.interface';
 import { DefaultTopics, TopicHandlerTypes } from '../../enums/kafka.enums';
 import { Utils } from '../../utils/utils';
 
@@ -143,6 +143,41 @@ describe('KafkaConsumerManager', () => {
         });
     });
 
+    describe('setBatchTopicHandlerWithManualCommit', () => {
+        it('should set batch topic handler with manual commit without options', () => {
+            const consumer = KafkaConsumerManager.getInstance(mockConnection, mockConfig);
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            const handlerMap = (consumer as any).batchManualCommitTopicHandlerMap;
+            expect(handlerMap.get('user-manual-batch')).toEqual({
+                type: TopicHandlerTypes.batchManualCommit,
+                handler,
+                options: undefined,
+            });
+        });
+
+        it('should set batch topic handler with manual commit with options', () => {
+            const consumer = KafkaConsumerManager.getInstance(mockConnection, mockConfig);
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            const options = {
+                consumerGroup: 'manual-commit-group',
+                maxBytes: 4096,
+                fromBeginning: true,
+            };
+
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler, options);
+
+            const handlerMap = (consumer as any).batchManualCommitTopicHandlerMap;
+            expect(handlerMap.get('user-manual-batch')).toEqual({
+                type: TopicHandlerTypes.batchManualCommit,
+                handler,
+                options,
+            });
+        });
+    });
+
     describe('getNewTopicHandler', () => {
         it('should return single topic handler if exists', () => {
             const consumer = KafkaConsumerManager.getInstance(mockConnection, mockConfig);
@@ -167,6 +202,20 @@ describe('KafkaConsumerManager', () => {
 
             expect(result).toEqual({
                 type: TopicHandlerTypes.batch,
+                handler,
+                options: undefined,
+            });
+        });
+
+        it('should return batch manual commit topic handler if exists', () => {
+            const consumer = KafkaConsumerManager.getInstance(mockConnection, mockConfig);
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            const result = consumer.getNewTopicHandler('user-manual-batch');
+
+            expect(result).toEqual({
+                type: TopicHandlerTypes.batchManualCommit,
                 handler,
                 options: undefined,
             });
@@ -414,6 +463,243 @@ describe('KafkaConsumerManager', () => {
         });
     });
 
+    describe('runBatchConsumerWithManualCommit', () => {
+        let consumer: KafkaConsumerManager;
+
+        beforeEach(() => {
+            consumer = KafkaConsumerManager.getInstance(mockConnection, mockConfig);
+            consumer.setAdmin(mockAdmin);
+        });
+
+        it('should run batch consumers with manual commit and message processing', async () => {
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            const consumerSet = (consumer as any).batchManualCommitConsumersSet;
+            consumerSet.add(mockConsumer);
+
+            const topicHandlerMap = (consumer as any).topicHandlerMap;
+            topicHandlerMap.set('test-manual-batch-topic', {
+                type: TopicHandlerTypes.batchManualCommit,
+                handler,
+            });
+
+            const mockBatch = {
+                topic: 'test-manual-batch-topic',
+                partition: 0,
+                messages: [
+                    { 
+                        value: Buffer.from(JSON.stringify({ userId: '1' })), 
+                        offset: '0',
+                        timestamp: '1640995200000',
+                        key: Buffer.from('key1')
+                    },
+                    { 
+                        value: Buffer.from(JSON.stringify({ userId: '2' })), 
+                        offset: '1',
+                        timestamp: '1640995201000',
+                        key: Buffer.from('key2')
+                    },
+                ],
+                lastOffset: () => '1',
+            };
+
+            const mockResolveOffset = jest.fn();
+            const mockHeartbeat = jest.fn();
+
+            mockConsumer.run.mockImplementationOnce(async ({ eachBatch }) => {
+                await eachBatch({
+                    batch: mockBatch,
+                    resolveOffset: mockResolveOffset,
+                    heartbeat: mockHeartbeat,
+                });
+            });
+
+            await (consumer as any).runBatchConsumerWithManualCommit();
+
+            expect(mockConsumer.run).toHaveBeenCalledWith({
+                eachBatchAutoResolve: false,
+                eachBatch: expect.any(Function),
+            });
+
+            expect(handler).toHaveBeenCalledWith({
+                topic: 'test-manual-batch-topic',
+                messages: [
+                    {
+                        userId: '1',
+                        _metadata: {
+                            offset: '0',
+                            partition: 0,
+                            timestamp: '1640995200000',
+                            key: 'key1'
+                        }
+                    },
+                    {
+                        userId: '2',
+                        _metadata: {
+                            offset: '1',
+                            partition: 0,
+                            timestamp: '1640995201000',
+                            key: 'key2'
+                        }
+                    }
+                ],
+                partition: 0,
+                offset: '1',
+                heartbeat: mockHeartbeat,
+                resolveOffset: mockResolveOffset,
+            });
+        });
+
+        it('should handle message processing errors in manual commit', async () => {
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            const consumerSet = (consumer as any).batchManualCommitConsumersSet;
+            consumerSet.add(mockConsumer);
+
+            const topicHandlerMap = (consumer as any).topicHandlerMap;
+            topicHandlerMap.set('test-manual-batch-topic', {
+                type: TopicHandlerTypes.batchManualCommit,
+                handler,
+            });
+
+            const mockBatch = {
+                topic: 'test-manual-batch-topic',
+                partition: 0,
+                messages: [
+                    { value: Buffer.from('invalid-json'), offset: '0' },
+                ],
+                lastOffset: () => '0',
+            };
+
+            mockConsumer.run.mockImplementationOnce(async ({ eachBatch }) => {
+                await eachBatch({
+                    batch: mockBatch,
+                    resolveOffset: jest.fn(),
+                    heartbeat: jest.fn(),
+                });
+            });
+
+            await (consumer as any).runBatchConsumerWithManualCommit();
+
+            expect(mockConsumer.run).toHaveBeenCalled();
+        });
+
+        it('should skip processing if no manual commit handler found', async () => {
+            const consumerSet = (consumer as any).batchManualCommitConsumersSet;
+            consumerSet.add(mockConsumer);
+
+            mockConsumer.run.mockImplementationOnce(async ({ eachBatch }) => {
+                await eachBatch({
+                    batch: {
+                        topic: 'unknown-manual-topic',
+                        partition: 0,
+                        messages: [],
+                        lastOffset: () => '0',
+                    },
+                    resolveOffset: jest.fn(),
+                    heartbeat: jest.fn(),
+                });
+            });
+
+            await (consumer as any).runBatchConsumerWithManualCommit();
+
+            expect(mockConsumer.run).toHaveBeenCalled();
+        });
+
+        it('should handle handler errors without auto-resolving offset', async () => {
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn().mockRejectedValue(new Error('Handler error'));
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            const consumerSet = (consumer as any).batchManualCommitConsumersSet;
+            consumerSet.add(mockConsumer);
+
+            const topicHandlerMap = (consumer as any).topicHandlerMap;
+            topicHandlerMap.set('test-manual-batch-topic', {
+                type: TopicHandlerTypes.batchManualCommit,
+                handler,
+            });
+
+            const mockBatch = {
+                topic: 'test-manual-batch-topic',
+                partition: 0,
+                messages: [
+                    { value: Buffer.from(JSON.stringify({ userId: '1' })), offset: '0' },
+                ],
+                lastOffset: () => '0',
+            };
+
+            const mockResolveOffset = jest.fn();
+
+            mockConsumer.run.mockImplementationOnce(async ({ eachBatch }) => {
+                await eachBatch({
+                    batch: mockBatch,
+                    resolveOffset: mockResolveOffset,
+                    heartbeat: jest.fn(),
+                });
+            });
+
+            await (consumer as any).runBatchConsumerWithManualCommit();
+
+            expect(handler).toHaveBeenCalled();
+            // Verify that resolveOffset was NOT called automatically on error
+            expect(mockResolveOffset).not.toHaveBeenCalled();
+        });
+
+        it('should preserve message metadata correctly', async () => {
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            const consumerSet = (consumer as any).batchManualCommitConsumersSet;
+            consumerSet.add(mockConsumer);
+
+            const topicHandlerMap = (consumer as any).topicHandlerMap;
+            topicHandlerMap.set('test-manual-batch-topic', {
+                type: TopicHandlerTypes.batchManualCommit,
+                handler,
+            });
+
+            const mockBatch = {
+                topic: 'test-manual-batch-topic',
+                partition: 2,
+                messages: [
+                    { 
+                        value: Buffer.from(JSON.stringify({ data: 'test' })), 
+                        offset: '12345',
+                        timestamp: '1640995200000',
+                        key: null // Test null key
+                    },
+                ],
+                lastOffset: () => '12345',
+            };
+
+            mockConsumer.run.mockImplementationOnce(async ({ eachBatch }) => {
+                await eachBatch({
+                    batch: mockBatch,
+                    resolveOffset: jest.fn(),
+                    heartbeat: jest.fn(),
+                });
+            });
+
+            await (consumer as any).runBatchConsumerWithManualCommit();
+
+            expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+                messages: [
+                    {
+                        data: 'test',
+                        _metadata: {
+                            offset: '12345',
+                            partition: 2,
+                            timestamp: '1640995200000',
+                            key: undefined // null key becomes undefined when toString() is called
+                        }
+                    }
+                ],
+            }));
+        });
+    });
+
     describe('restartConsumer', () => {
         let consumer: KafkaConsumerManager;
 
@@ -430,7 +716,7 @@ describe('KafkaConsumerManager', () => {
 
             await consumer.restartConsumer('test-service-org1.user-created');
 
-            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-single-test', {
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-user-created-single-test', {
                 maxBytes: undefined,
                 sessionTimeout: undefined,
                 heartbeatInterval: undefined,
@@ -451,7 +737,7 @@ describe('KafkaConsumerManager', () => {
 
             await consumer.restartConsumer('test-service-org1.user-batch');
 
-            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-batch-test', {
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-user-batch-batch-test', {
                 maxBytes: undefined,
                 sessionTimeout: undefined,
                 heartbeatInterval: undefined,
@@ -463,6 +749,30 @@ describe('KafkaConsumerManager', () => {
             });
             expect(mockConsumer.run).toHaveBeenCalledWith({
                 eachBatchAutoResolve: true,
+                eachBatch: expect.any(Function),
+            });
+        });
+
+        it('should restart consumer for batch manual commit topic handler', async () => {
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            MockedUtils.unTransformTopic.mockReturnValueOnce('user-manual-batch');
+
+            await consumer.restartConsumer('test-service-org1.user-manual-batch');
+
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith('test-group-user-manual-batch-batch-manual-commit-test', {
+                maxBytes: undefined,
+                sessionTimeout: undefined,
+                heartbeatInterval: undefined,
+            });
+            expect(mockConsumer.stop).toHaveBeenCalled();
+            expect(mockConsumer.subscribe).toHaveBeenCalledWith({
+                topic: 'test-service-org1.user-manual-batch',
+                fromBeginning: true,
+            });
+            expect(mockConsumer.run).toHaveBeenCalledWith({
+                eachBatchAutoResolve: false,
                 eachBatch: expect.any(Function),
             });
         });
@@ -594,6 +904,53 @@ describe('KafkaConsumerManager', () => {
                 topic: 'test-service-org1.user-batch',
                 fromBeginning: false,
             });
+        });
+
+        it('should handle batch manual commit topic subscription with custom options', async () => {
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            const options = {
+                consumerGroup: 'custom-manual-commit-group',
+                fromBeginning: true,
+                maxBytes: 8192,
+                sessionTimeout: 90000,
+                heartbeatInterval: 45000,
+            };
+
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler, options);
+
+            const result = await (consumer as any).batchManualCommitTopicSubscription('test-service-org1.user-manual-batch');
+
+            expect(result).toBe(true);
+            expect(mockConnection.createConsumer).toHaveBeenCalledWith(
+                'custom-manual-commit-group',
+                {
+                    maxBytes: 8192,
+                    sessionTimeout: 90000,
+                    heartbeatInterval: 45000,
+                }
+            );
+            expect(mockConsumer.subscribe).toHaveBeenCalledWith({
+                topic: 'test-service-org1.user-manual-batch',
+                fromBeginning: true,
+            });
+        });
+
+        it('should return false when no matching manual commit handler found', async () => {
+            const result = await (consumer as any).batchManualCommitTopicSubscription('unknown-topic');
+
+            expect(result).toBe(false);
+            expect(mockConnection.createConsumer).not.toHaveBeenCalled();
+        });
+
+        it('should handle consumer creation failure in manual commit subscription', async () => {
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            consumer.setBatchTopicHandlerWithManualCommit('user-manual-batch', handler);
+
+            mockConnection.createConsumer.mockResolvedValueOnce(null);
+
+            const result = await (consumer as any).batchManualCommitTopicSubscription('test-service-org1.user-manual-batch');
+
+            expect(result).toBe(false);
         });
 
         it('should return false when no matching handler found', async () => {

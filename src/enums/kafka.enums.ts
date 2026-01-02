@@ -24,10 +24,13 @@ export enum DefaultTopics {
  * @description Defines how messages should be processed by consumers:
  * - single: Process messages one at a time
  * - batch: Process multiple messages together for better throughput
+ * - batchManualCommit: Process multiple messages with manual offset management
  */
 export enum TopicHandlerTypes {
     /** Process messages individually for low latency */
     single = 'single',
     /** Process messages in batches for high throughput */
-    batch = 'batch'
+    batch = 'batch',
+    /** Process messages in batches with manual offset control */
+    batchManualCommit = 'batchManualCommit'
 }

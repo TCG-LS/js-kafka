@@ -7,10 +7,11 @@ A robust npm package for handling dynamic topic creation, subscription, and mana
 - 🚀 **Dynamic Topic Management** - Automatic topic creation and subscription
 - 🔄 **Multi-Instance Support** - Designed for microservice architectures
 - 📝 **Topic Registry** - Easy topic registration and management
-- 🎯 **Flexible Messaging** - Support for both batch and single message processing
+- 🎯 **Flexible Messaging** - Support for batch, single message, and manual commit processing
 - ⚡ **Built on KafkaJS** - Leverages the power and reliability of KafkaJS
 - 🛠️ **TypeScript Support** - Full TypeScript definitions included
 - 🌐 **Dynamic Topic Subscription** - Automatic subscription to related topics using pattern matching
+- 🎛️ **Manual Offset Management** - Precise control over message acknowledgment and retry logic
 
 ## Installation
 
@@ -120,6 +121,12 @@ kafka.registry.registerSingle("user-events", handleSingleMessage, {
   fromBeginning: false,
 });
 
+// Register batch consumer with manual commit control - will subscribe to all topics ending with .critical-events
+kafka.registry.registerBatchWithManualCommit("critical-events", handleBatchWithManualCommit, {
+  consumerGroup: "critical-events-manual-group",
+  fromBeginning: false,
+});
+
 // This is optional
 {
   consumerGroup: "my-service-group",
@@ -156,7 +163,215 @@ By default, the producer is configured to acks the messages with the following l
 
 1. If acks is mentioned in the sendMessage will have more priority than mentioned in the getkafkaClient
 
-## Dynamic Topic Subscription
+## Manual Commit Batch Processing
+
+js-kafka supports manual offset management for batch consumers, giving you precise control over when Kafka offsets are committed. This is essential for scenarios requiring custom error handling, retry logic, or transactional processing.
+
+### When to Use Manual Commit
+
+- **Critical Message Processing**: When you need to ensure messages are processed successfully before committing
+- **Database Transactions**: When message processing involves database operations that need to be atomic
+- **Custom Retry Logic**: When you want to implement sophisticated retry mechanisms
+- **Partial Batch Processing**: When you need to commit individual message offsets within a batch
+- **Error Recovery**: When you need fine-grained control over which messages get reprocessed
+
+### Basic Manual Commit Usage
+
+```javascript
+// Register a batch consumer with manual commit control
+kafka.registry.registerBatchWithManualCommit("critical-events", async (params) => {
+  const { topic, messages, offset, resolveOffset, heartbeat } = params;
+  
+  console.log(`Processing ${messages.length} critical messages from ${topic}`);
+  
+  try {
+    // Process all messages in the batch
+    for (const message of messages) {
+      await processCriticalMessage(message);
+    }
+    
+    // Only commit offset if all processing was successful
+    console.log(`Successfully processed batch, committing offset: ${offset}`);
+    resolveOffset(offset);
+    
+  } catch (error) {
+    console.error('Batch processing failed:', error);
+    // Don't call resolveOffset - messages will be reprocessed
+  }
+  
+  await heartbeat();
+}, {
+  consumerGroup: "critical-events-manual-group",
+  maxBytes: 1024 * 1024, // 1MB batches
+  fromBeginning: false
+});
+```
+
+### Individual Message Offset Management
+
+Each message in the batch includes metadata with its individual offset, allowing for granular commit control:
+
+```javascript
+kafka.registry.registerBatchWithManualCommit("user-events", async (params) => {
+  const { topic, messages, resolveOffset } = params;
+  
+  for (const message of messages) {
+    try {
+      // Process individual message
+      await processUserEvent(message);
+      
+      // Commit this specific message's offset
+      console.log(`✅ Processed message at offset: ${message._metadata.offset}`);
+      resolveOffset(message._metadata.offset);
+      
+    } catch (error) {
+      console.error(`❌ Failed to process message at offset ${message._metadata.offset}:`, error);
+      // Don't commit this message's offset - it will be reprocessed
+      break; // Stop processing remaining messages in batch
+    }
+  }
+});
+```
+
+### Message Metadata Structure
+
+Each message in manual commit batches includes metadata:
+
+```javascript
+{
+  // Your original message data
+  userId: "123",
+  action: "login",
+  
+  // Added metadata for offset management
+  _metadata: {
+    offset: "12345",           // Individual message offset
+    partition: 0,              // Partition number
+    timestamp: "1640995200000", // Message timestamp
+    key: "user-123"            // Message key
+  }
+}
+```
+
+### Advanced Manual Commit Patterns
+
+#### 1. Database Transaction Integration
+
+```javascript
+kafka.registry.registerBatchWithManualCommit("orders", async (params) => {
+  const { messages, resolveOffset, offset } = params;
+  
+  const transaction = await db.beginTransaction();
+  
+  try {
+    // Process all messages in a database transaction
+    for (const message of messages) {
+      await processOrderInTransaction(message, transaction);
+    }
+    
+    // Commit database transaction first
+    await transaction.commit();
+    
+    // Only commit Kafka offset after successful DB commit
+    resolveOffset(offset);
+    
+  } catch (error) {
+    await transaction.rollback();
+    console.error('Transaction failed, not committing Kafka offset:', error);
+    // Kafka messages will be reprocessed
+  }
+});
+```
+
+#### 2. Partial Batch Processing with Success Rate
+
+```javascript
+kafka.registry.registerBatchWithManualCommit("analytics", async (params) => {
+  const { messages, resolveOffset, offset } = params;
+  
+  const results = await Promise.allSettled(
+    messages.map(msg => processAnalyticsEvent(msg))
+  );
+  
+  const successCount = results.filter(r => r.status === 'fulfilled').length;
+  const successRate = successCount / messages.length;
+  
+  // Only commit if success rate meets threshold
+  if (successRate >= 0.8) {
+    console.log(`Success rate ${successRate * 100}% - committing batch`);
+    resolveOffset(offset);
+  } else {
+    console.log(`Success rate ${successRate * 100}% too low - not committing`);
+    // Messages will be reprocessed
+  }
+});
+```
+
+#### 3. Retry Logic with Exponential Backoff
+
+```javascript
+kafka.registry.registerBatchWithManualCommit("payments", async (params) => {
+  const { messages, resolveOffset, offset } = params;
+  
+  const maxRetries = 3;
+  let attempt = 0;
+  
+  while (attempt < maxRetries) {
+    try {
+      await processPaymentBatch(messages);
+      resolveOffset(offset);
+      return; // Success
+    } catch (error) {
+      attempt++;
+      if (attempt >= maxRetries) {
+        console.error(`Failed after ${maxRetries} attempts:`, error);
+        // Could send to dead letter queue here
+        return; // Don't commit - messages will be reprocessed
+      }
+      
+      // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+    }
+  }
+});
+```
+
+### Manual Commit vs Regular Batch Comparison
+
+| Feature | Regular Batch | Manual Commit Batch |
+|---------|---------------|-------------------|
+| Offset Commit | Automatic after handler | Manual via `resolveOffset()` |
+| Error Handling | Limited | Full control |
+| Retry Logic | Basic | Custom implementation |
+| Individual Message Control | No | Yes (via `_metadata.offset`) |
+| Transaction Support | Limited | Full support |
+| Complexity | Low | Higher |
+| Use Case | Simple processing | Critical/complex processing |
+
+### Best Practices for Manual Commit
+
+1. **Always Call Heartbeat**: Especially in long-running processing loops
+2. **Handle Errors Gracefully**: Decide whether to commit based on your error strategy
+3. **Monitor Consumer Lag**: Manual commit can increase processing time
+4. **Test Error Scenarios**: Thoroughly test failure cases and recovery
+5. **Use Appropriate Batch Sizes**: Balance throughput with processing complexity
+6. **Implement Monitoring**: Track success rates and processing times
+
+### Configuration Options
+
+Manual commit consumers support all standard batch consumer options:
+
+```javascript
+const options = {
+  consumerGroup: 'manual-commit-group',
+  fromBeginning: false,
+  maxBytes: 1024 * 1024,        // 1MB batches
+  sessionTimeout: 60000,         // 60 seconds
+  heartbeatInterval: 30000       // 30 seconds
+};
+
+kafka.registry.registerBatchWithManualCommit('topic', handler, options);
+```
 
 ### How It Works
 
@@ -307,6 +522,43 @@ async function handleSingleMessage(params: {
 }
 ```
 
+#### `registry.registerBatchWithManualCommit(topic, handler, options)`
+
+Registers a batch message handler with manual offset management for a topic pattern.
+
+**Parameters:**
+
+- `topic` (string): Base topic name to subscribe to (will match all topics ending with `.{topic}`)
+- `handler` (function): Callback function to handle message batches with manual commit control
+- `options` (ITopicRegistryOptions): Consumer options
+
+**Handler Signature:**
+
+```typescript
+async function handleBatchWithManualCommit(params: {
+  topic: string;
+  messages: Array<{
+    // Your message data
+    [key: string]: any;
+    // Message metadata for offset management
+    _metadata: {
+      offset: string;
+      partition: number;
+      timestamp?: string;
+      key?: string;
+    };
+  }>;
+  partition: number;
+  offset: string;
+  heartbeat: () => Promise<void>;
+  resolveOffset: (offset: string) => void;
+}) {
+  // Handle batch of messages with manual offset control
+  // Call resolveOffset(offset) when ready to commit
+  // Can commit individual message offsets using message._metadata.offset
+}
+```
+
 ## Complete Example
 
 ```javascript
@@ -346,6 +598,17 @@ class KafkaService {
       }
     );
 
+    // This will subscribe to all topics ending with .critical-events with manual commit
+    this._kafka.registry.registerBatchWithManualCommit(
+      "critical-events",
+      this.handleCriticalEvents.bind(this),
+      {
+        consumerGroup: "critical-events-manual-group",
+        fromBeginning: false,
+        maxBytes: 512 * 1024, // 512KB batches for critical events
+      }
+    );
+
     // Initialize the client
     await this._kafka.init();
     console.log("Kafka client initialized");
@@ -370,6 +633,49 @@ class KafkaService {
       `[Kafka][Single][${topic}] Message from partition ${partition}, offset ${offset}`
     );
     console.log("Message:", message);
+  }
+
+  // Manual commit batch function
+  async handleCriticalEvents(params) {
+    const { topic, messages, offset, resolveOffset, heartbeat } = params;
+    console.log(
+      `[Kafka][ManualCommit][${topic}] Received ${messages.length} critical messages`
+    );
+
+    try {
+      // Process each critical message with individual offset management
+      for (const message of messages) {
+        try {
+          console.log(`Processing critical message at offset: ${message._metadata.offset}`);
+          await this.processCriticalMessage(message);
+          
+          // Commit individual message offset after successful processing
+          resolveOffset(message._metadata.offset);
+          console.log(`✅ Committed offset: ${message._metadata.offset}`);
+          
+        } catch (messageError) {
+          console.error(`❌ Failed to process message at offset ${message._metadata.offset}:`, messageError);
+          // Don't commit this message's offset - it will be reprocessed
+          break; // Stop processing remaining messages
+        }
+      }
+    } catch (batchError) {
+      console.error(`Batch processing error for ${topic}:`, batchError);
+      // Don't commit any offsets - entire batch will be reprocessed
+    }
+
+    await heartbeat();
+  }
+
+  async processCriticalMessage(message) {
+    // Simulate critical processing that might fail
+    if (message.shouldFail) {
+      throw new Error('Simulated critical processing failure');
+    }
+    
+    // Simulate async processing
+    await new Promise(resolve => setTimeout(resolve, 100));
+    console.log('Critical message processed successfully:', message);
   }
 
   async sendUserEvent(userId, eventData) {
@@ -398,6 +704,21 @@ class KafkaService {
     // This will create topic: dev-user-service-user123.notifications if not present and send the message to the topic created
     await this._kafka.producer.sendMessage("notifications", message, userId);
   }
+
+  async sendCriticalEvent(userId, eventData) {
+    const message = {
+      key: userId,
+      value: {
+        userId,
+        ...eventData,
+        timestamp: new Date().toISOString(),
+        priority: 'critical'
+      },
+    };
+
+    // This will create topic: dev-user-service-user123.critical-events if not present
+    await this._kafka.producer.sendMessage("critical-events", message, userId);
+  }
 }
 
 // Usage
@@ -414,6 +735,13 @@ await kafkaService.sendNotification("user-123", {
   type: "email",
   subject: "Profile Updated",
   body: "Your profile has been successfully updated.",
+});
+
+// Send critical event that requires manual commit handling
+await kafkaService.sendCriticalEvent("user-123", {
+  action: "account_locked",
+  reason: "suspicious_activity",
+  requiresImmediate: true
 });
 ```
 

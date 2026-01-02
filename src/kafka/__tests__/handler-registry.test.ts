@@ -1,7 +1,7 @@
 import { KafkaTopicHandlerRegistry } from '../handler-registry';
 import { KafkaConnectionManager } from '../connection-manager';
 import { KafkaConsumerManager } from '../consumer-manager';
-import { KafkaConfig, SingleMessageHandler, BatchMessageHandler } from '../../interface/kafka.interface';
+import { KafkaConfig, SingleMessageHandler, BatchMessageHandler, BatchMessageHandlerWithManualCommit } from '../../interface/kafka.interface';
 
 // Mock dependencies
 jest.mock('../connection-manager');
@@ -20,6 +20,7 @@ jest.mock('../../logger/logger', () => ({
 const mockConsumerManager = {
     setSingleTopicHandler: jest.fn(),
     setBatchTopicHandler: jest.fn(),
+    setBatchTopicHandlerWithManualCommit: jest.fn(),
 } as any;
 
 const mockConnection = {} as any;
@@ -198,13 +199,105 @@ describe('KafkaTopicHandlerRegistry', () => {
         });
     });
 
+    describe('registerBatchWithManualCommit', () => {
+        it('should register batch message handler with manual commit without options', () => {
+            const topic = 'user-manual-batch-events';
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+
+            registry.registerBatchWithManualCommit(topic, handler);
+
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledWith(
+                topic,
+                handler,
+                undefined
+            );
+        });
+
+        it('should register batch message handler with manual commit with options', () => {
+            const topic = 'user-manual-batch-events';
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            const options = {
+                consumerGroup: 'manual-commit-group',
+                fromBeginning: false,
+                maxBytes: 4096,
+                sessionTimeout: 60000,
+                heartbeatInterval: 30000,
+            };
+
+            registry.registerBatchWithManualCommit(topic, handler, options);
+
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledWith(
+                topic,
+                handler,
+                options
+            );
+        });
+
+        it('should handle multiple manual commit handler registrations', () => {
+            const handler1: BatchMessageHandlerWithManualCommit = jest.fn();
+            const handler2: BatchMessageHandlerWithManualCommit = jest.fn();
+            const handler3: BatchMessageHandlerWithManualCommit = jest.fn();
+
+            registry.registerBatchWithManualCommit('manual-topic1', handler1);
+            registry.registerBatchWithManualCommit('manual-topic2', handler2);
+            registry.registerBatchWithManualCommit('manual-topic3', handler3);
+
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledTimes(3);
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenNthCalledWith(
+                1, 'manual-topic1', handler1, undefined
+            );
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenNthCalledWith(
+                2, 'manual-topic2', handler2, undefined
+            );
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenNthCalledWith(
+                3, 'manual-topic3', handler3, undefined
+            );
+        });
+
+        it('should register handler for same topic multiple times', () => {
+            const topic = 'manual-batch-events';
+            const handler1: BatchMessageHandlerWithManualCommit = jest.fn();
+            const handler2: BatchMessageHandlerWithManualCommit = jest.fn();
+
+            registry.registerBatchWithManualCommit(topic, handler1);
+            registry.registerBatchWithManualCommit(topic, handler2);
+
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledTimes(2);
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenNthCalledWith(
+                1, topic, handler1, undefined
+            );
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenNthCalledWith(
+                2, topic, handler2, undefined
+            );
+        });
+
+        it('should accept async manual commit handlers', () => {
+            const asyncManualCommitHandler: BatchMessageHandlerWithManualCommit = async (params) => {
+                // Async manual commit handler implementation
+                const { resolveOffset, offset } = params;
+                await Promise.resolve();
+                resolveOffset(offset!);
+            };
+
+            registry.registerBatchWithManualCommit('async-manual-topic', asyncManualCommitHandler);
+
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledWith(
+                'async-manual-topic',
+                asyncManualCommitHandler,
+                undefined
+            );
+        });
+    });
+
     describe('Mixed Handler Registration', () => {
-        it('should handle both single and batch handler registrations', () => {
+        it('should handle single, batch, and manual commit handler registrations', () => {
             const singleHandler: SingleMessageHandler = jest.fn();
             const batchHandler: BatchMessageHandler = jest.fn();
+            const manualCommitHandler: BatchMessageHandlerWithManualCommit = jest.fn();
 
             registry.registerSingle('single-topic', singleHandler);
             registry.registerBatch('batch-topic', batchHandler);
+            registry.registerBatchWithManualCommit('manual-topic', manualCommitHandler);
 
             expect(mockConsumerManager.setSingleTopicHandler).toHaveBeenCalledWith(
                 'single-topic',
@@ -216,15 +309,22 @@ describe('KafkaTopicHandlerRegistry', () => {
                 batchHandler,
                 undefined
             );
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledWith(
+                'manual-topic',
+                manualCommitHandler,
+                undefined
+            );
         });
 
         it('should handle same topic with different handler types', () => {
             const topic = 'mixed-topic';
             const singleHandler: SingleMessageHandler = jest.fn();
             const batchHandler: BatchMessageHandler = jest.fn();
+            const manualCommitHandler: BatchMessageHandlerWithManualCommit = jest.fn();
 
             registry.registerSingle(topic, singleHandler);
             registry.registerBatch(topic, batchHandler);
+            registry.registerBatchWithManualCommit(topic, manualCommitHandler);
 
             expect(mockConsumerManager.setSingleTopicHandler).toHaveBeenCalledWith(
                 topic,
@@ -234,6 +334,11 @@ describe('KafkaTopicHandlerRegistry', () => {
             expect(mockConsumerManager.setBatchTopicHandler).toHaveBeenCalledWith(
                 topic,
                 batchHandler,
+                undefined
+            );
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledWith(
+                topic,
+                manualCommitHandler,
                 undefined
             );
         });
@@ -266,6 +371,29 @@ describe('KafkaTopicHandlerRegistry', () => {
             expect(mockConsumerManager.setBatchTopicHandler).toHaveBeenCalledWith(
                 'async-batch-topic',
                 asyncBatchHandler,
+                undefined
+            );
+        });
+
+        it('should accept async manual commit batch handlers', () => {
+            const asyncManualCommitHandler: BatchMessageHandlerWithManualCommit = async (params) => {
+                // Async manual commit handler implementation
+                const { resolveOffset, offset, messages } = params;
+                
+                // Process messages
+                for (const message of messages) {
+                    await Promise.resolve(); // Simulate async processing
+                }
+                
+                // Manual commit
+                resolveOffset(offset!);
+            };
+
+            registry.registerBatchWithManualCommit('async-manual-batch-topic', asyncManualCommitHandler);
+
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledWith(
+                'async-manual-batch-topic',
+                asyncManualCommitHandler,
                 undefined
             );
         });
@@ -306,6 +434,26 @@ describe('KafkaTopicHandlerRegistry', () => {
             registry.registerBatch(topic, handler, options);
 
             expect(mockConsumerManager.setBatchTopicHandler).toHaveBeenCalledWith(
+                topic,
+                handler,
+                options
+            );
+        });
+
+        it('should pass through all option properties for manual commit handlers', () => {
+            const topic = 'manual-commit-options-topic';
+            const handler: BatchMessageHandlerWithManualCommit = jest.fn();
+            const options = {
+                consumerGroup: 'manual-commit-test-group',
+                fromBeginning: true,
+                maxBytes: 16384,
+                sessionTimeout: 120000,
+                heartbeatInterval: 60000,
+            };
+
+            registry.registerBatchWithManualCommit(topic, handler, options);
+
+            expect(mockConsumerManager.setBatchTopicHandlerWithManualCommit).toHaveBeenCalledWith(
                 topic,
                 handler,
                 options

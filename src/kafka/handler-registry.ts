@@ -5,6 +5,7 @@
 
 import {
     BatchMessageHandler,
+    BatchMessageHandlerWithManualCommit,
     ITopicRegistryOptions,
     KafkaConfig,
     SingleMessageHandler,
@@ -117,5 +118,48 @@ export class KafkaTopicHandlerRegistry {
     ) {
         this.logger.debug(`registerd [batch][topic]: ${topic}`);
         this.kafkaConsumer.setBatchTopicHandler(topic, handler, options);
+    }
+
+    /**
+     * Registers a handler for processing batches of messages with manual offset management.
+     * 
+     * @param topic - Base topic name to subscribe to (matches all topics ending with .{topic})
+     * @param handler - Function to handle message batches with manual commit control
+     * @param options - Optional consumer configuration
+     * 
+     * @description Registers a handler that will process messages in batches with manual
+     * offset management. The handler receives a resolveOffset function to control when
+     * offsets are committed. This provides precise control over message acknowledgment
+     * and is suitable for scenarios requiring custom error handling or retry logic.
+     * 
+     * @example
+     * ```typescript
+     * registry.registerBatchWithManualCommit('critical-events', async ({ 
+     *   topic, messages, partition, offset, heartbeat, resolveOffset 
+     * }) => {
+     *   console.log(`Processing ${messages.length} critical messages from ${topic}`);
+     *   
+     *   try {
+     *     await processCriticalBatch(messages);
+     *     // Only commit if processing was successful
+     *     resolveOffset(offset);
+     *   } catch (error) {
+     *     console.error('Failed to process batch, not committing offset');
+     *     // Don't call resolveOffset - messages will be reprocessed
+     *   }
+     * }, {
+     *   consumerGroup: 'critical-events-manual',
+     *   maxBytes: 262144,
+     *   fromBeginning: false
+     * });
+     * ```
+     */
+    registerBatchWithManualCommit(
+        topic: string,
+        handler: BatchMessageHandlerWithManualCommit,
+        options?: ITopicRegistryOptions
+    ) {
+        this.logger.debug(`registerd [batchManualCommit][topic]: ${topic}`);
+        this.kafkaConsumer.setBatchTopicHandlerWithManualCommit(topic, handler, options);
     }
 }
