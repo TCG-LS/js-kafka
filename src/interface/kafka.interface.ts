@@ -74,9 +74,19 @@ export type BatchMessageHandler = (
 ) => Promise<void>;
 
 /**
+ * Handler function for processing batches of messages with manual offset management.
+ * 
+ * @param params - Batch message parameters with manual offset control
+ * @returns Promise that resolves when batch processing is complete
+ */
+export type BatchMessageHandlerWithManualCommit = (
+    params: IBulkKafkaConsumerParamWithManualCommit,
+) => Promise<void>;
+
+/**
  * Parameters passed to single message handlers.
  */
-interface ISingleKafkaConsumerParams {
+export interface ISingleKafkaConsumerParams {
     /** Full topic name where the message was received */
     topic: string;
     /** The Kafka message object */
@@ -92,7 +102,7 @@ interface ISingleKafkaConsumerParams {
 /**
  * Parameters passed to batch message handlers.
  */
-interface IBulkKafkaConsumerParam {
+export interface IBulkKafkaConsumerParam {
     /** Full topic name where the messages were received */
     topic: string;
     /** Array of Kafka message objects */
@@ -103,6 +113,24 @@ interface IBulkKafkaConsumerParam {
     offset?: string;
     /** Heartbeat function to signal consumer is alive */
     heartbeat: () => Promise<void>;
+}
+
+/**
+ * Parameters passed to batch message handlers with manual offset management.
+ */
+export interface IBulkKafkaConsumerParamWithManualCommit {
+    /** Full topic name where the messages were received */
+    topic: string;
+    /** Array of Kafka message objects */
+    messages: KafkaMessage[];
+    /** Partition number where the messages were received */
+    partition?: number;
+    /** Last message offset in the batch */
+    offset?: string;
+    /** Heartbeat function to signal consumer is alive */
+    heartbeat: () => Promise<void>;
+    /** Function to manually resolve/commit offset */
+    resolveOffset: (offset: string) => void;
 }
 
 /**
@@ -128,10 +156,10 @@ export interface ITopicRegistryOptions {
  * Generic topic handler interface.
  */
 export interface TopicHandler {
-    /** Type of handler (single or batch) */
-    type: 'single' | 'batch';
+    /** Type of handler (single, batch, or batchManualCommit) */
+    type: 'single' | 'batch' | 'batchManualCommit';
     /** The handler function */
-    handler: SingleMessageHandler | BatchMessageHandler;
+    handler: SingleMessageHandler | BatchMessageHandler | BatchMessageHandlerWithManualCommit;
 }
 
 /**
@@ -142,6 +170,18 @@ export interface BatchTopicMapHandler {
     type: 'batch';
     /** Batch message handler function */
     handler: BatchMessageHandler;
+    /** Optional consumer configuration */
+    options?: ITopicRegistryOptions;
+}
+
+/**
+ * Batch topic handler with manual commit configuration options.
+ */
+export interface BatchTopicMapHandlerWithManualCommit {
+    /** Handler type identifier */
+    type: 'batchManualCommit';
+    /** Batch message handler function with manual commit */
+    handler: BatchMessageHandlerWithManualCommit;
     /** Optional consumer configuration */
     options?: ITopicRegistryOptions;
 }

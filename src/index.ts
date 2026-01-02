@@ -262,3 +262,4 @@ export function getKafkaClient(
 // Re-export useful types and utilities
 export * from "./interface/kafka.interface";
 export { KafkaConfigManager } from "./config/kafka-config";
+export { TopicHandlerTypes } from "./enums/kafka.enums";

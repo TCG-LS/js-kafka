@@ -86,6 +86,7 @@ describe('KafkaAdminManager', () => {
                     numPartitions: 3,
                     replicationFactor: 2,
                 }],
+                waitForLeaders: true,
             });
         });
 
@@ -101,6 +102,7 @@ describe('KafkaAdminManager', () => {
                     numPartitions: 5,
                     replicationFactor: 3,
                 }],
+                waitForLeaders: true,
             });
         });
 
@@ -178,6 +180,7 @@ describe('KafkaAdminManager', () => {
                     numPartitions: 1,
                     replicationFactor: 1,
                 }],
+                waitForLeaders: true,
             });
         });
     });
@@ -269,6 +272,7 @@ describe('KafkaAdminManager', () => {
                     numPartitions: 3,
                     replicationFactor: 2,
                 }],
+                waitForLeaders: true,
             });
 
             // Verify update message was sent

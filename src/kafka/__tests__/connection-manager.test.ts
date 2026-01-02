@@ -90,6 +90,9 @@ describe('KafkaConnectionManager', () => {
 
             expect(mockKafkaInstance.producer).toHaveBeenCalledWith({
                 allowAutoTopicCreation: false,
+                retry: {
+                    retries: 0,
+                },
             });
             expect(mockProducer.connect).toHaveBeenCalled();
             expect(producer).toBe(mockProducer);
@@ -132,6 +135,10 @@ describe('KafkaConnectionManager', () => {
                 maxBytes: 262144,
                 sessionTimeout: 60000,
                 heartbeatInterval: 30000,
+                allowAutoTopicCreation: false,
+                retry: {
+                    retries: 0,
+                },
             });
             expect(mockConsumer.connect).toHaveBeenCalled();
             expect(consumer).toBe(mockConsumer);
@@ -150,6 +157,10 @@ describe('KafkaConnectionManager', () => {
             expect(mockKafkaInstance.consumer).toHaveBeenCalledWith({
                 groupId,
                 ...options,
+                allowAutoTopicCreation: false,
+                retry: {
+                    retries: 0,
+                },
             });
             expect(consumer).toBe(mockConsumer);
         });

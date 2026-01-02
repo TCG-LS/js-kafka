@@ -20,16 +20,22 @@ describe('Kafka Enums', () => {
             expect(TopicHandlerTypes.batch).toBe('batch');
         });
 
+        it('should have batch manual commit handler type', () => {
+            expect(TopicHandlerTypes.batchManualCommit).toBe('batchManualCommit');
+        });
+
         it('should have correct values', () => {
             expect(TopicHandlerTypes.single).toBe('single');
             expect(TopicHandlerTypes.batch).toBe('batch');
+            expect(TopicHandlerTypes.batchManualCommit).toBe('batchManualCommit');
         });
 
-        it('should have exactly two handler types', () => {
+        it('should have exactly three handler types', () => {
             const values = Object.values(TopicHandlerTypes);
-            expect(values).toHaveLength(2);
+            expect(values).toHaveLength(3);
             expect(values).toContain('single');
             expect(values).toContain('batch');
+            expect(values).toContain('batchManualCommit');
         });
     });
 });
