@@ -1,6 +1,6 @@
 {
   "name": "js-kafka",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "A robust npm package for handling dynamic topic creation, subscription, and management in multi-instance microservice architectures. Built on top of KafkaJS, this package provides a simplified interface for Kafka operations while maintaining full flexibility and control.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
